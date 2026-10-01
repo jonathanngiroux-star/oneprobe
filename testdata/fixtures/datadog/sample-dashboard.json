@@ -1,0 +1,55 @@
+{
+  "description": "Anonymized sample dashboard exported from Datadog.",
+  "id": "abc-123",
+  "title": "Web Overview",
+  "widgets": [
+    {
+      "id": 1,
+      "requests": [
+        {
+          "display_type": "line",
+          "q": "avg:system.cpu.user{host:web-1}"
+        }
+      ],
+      "title": "Request rate",
+      "type": "timeseries"
+    },
+    {
+      "id": 2,
+      "requests": [
+        {
+          "aggregator": "last",
+          "conditional_formats": [
+            {
+              "palette": "white_on_green"
+            }
+          ],
+          "q": "anomalies(avg:system.cpu.user{host:web-1}, 'basic', 2)"
+        }
+      ],
+      "title": "Error ratio %",
+      "type": "query_value"
+    },
+    {
+      "id": 3,
+      "requests": [
+        {
+          "q": "top(avg:system.mem.used{env:prod} by {host}, 5, 'max', 'desc')"
+        }
+      ],
+      "title": "Top hosts by memory",
+      "type": "toplist"
+    },
+    {
+      "check": "synthetics.check.state",
+      "id": 4,
+      "requests": [
+        {
+          "q": "\"synthetics\" in (\"check_state\")"
+        }
+      ],
+      "title": "Synthetic check",
+      "type": "check_status"
+    }
+  ]
+}

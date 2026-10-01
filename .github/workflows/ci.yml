@@ -1,0 +1,72 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test ./...
+      - name: build
+        run: go build -o oneprobe ./cmd/oneprobe
+      # Fidelity gate: the migrate dry-run on the committed Datadog
+      # fixture must stay machine-stable — same input, same report keys.
+      - name: migrate fixture gate (datadog)
+        run: |
+          ./oneprobe migrate --from=datadog --dry-run --format=json \
+            --input testdata/fixtures/datadog/sample-dashboard.json > /tmp/report.json
+          jq -e '.source=="datadog" and .dry_run==true
+                 and (.mapped | length)==1
+                 and (.partial | length)==2
+                 and (.unmapped | length)==1
+                 and (.risks | map(.key))==["query.anomalies","tags.scope","widget.synthetics"]
+                 and (.mapped[0].widget_id)==1
+                 and (.unmapped[0].widget_id)==4' /tmp/report.json
+          # Same input twice must be byte-identical (the report is a CI contract).
+          ./oneprobe migrate --from=datadog --dry-run --format=json \
+            --input testdata/fixtures/datadog/sample-dashboard.json > /tmp/report2.json
+          diff /tmp/report.json /tmp/report2.json
+      # Refusals must name the rejected input, not dump usage.
+      - name: migrate refusal gate
+        run: |
+          if ./oneprobe migrate --from=grafana --dry-run 2>&1 | grep -q "unsupported --from=grafana"; then
+            echo "refusal names rejected source - OK"
+          else
+            echo "::error::migrate refusal does not name the rejected --from value"; exit 1
+          fi
+          if ./oneprobe migrate --from=datadog 2>&1 | grep -q -- "--dry-run"; then
+            echo "non-dry-run refusal names --dry-run - OK"
+          else
+            echo "::error::migrate without --dry-run must name the flag"; exit 1
+          fi
+      # donate must print both addresses exactly (the binding monetization surface).
+      - name: donate gate
+        run: |
+          ./oneprobe donate | grep -q "0x85ee7E71f762d772599cbF1EC20E651B30657521"
+          ./oneprobe donate | grep -q "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg"
+      # serve must boot, answer /healthz and /donate, and 404 unbuilt surfaces.
+      - name: serve smoke (boot + healthz + donate + 404)
+        run: |
+          ./oneprobe serve --db /tmp/ci.db --http 127.0.0.1:18080 &
+          SRV=$!
+          for i in $(seq 1 15); do curl -sf http://127.0.0.1:18080/healthz >/dev/null && break; sleep 1; done
+          test "$(curl -sf http://127.0.0.1:18080/healthz)" = "ok"
+          curl -sf http://127.0.0.1:18080/donate | grep -q "0x85ee7E71f762d772599cbF1EC20E651B30657521"
+          curl -sf http://127.0.0.1:18080/donate | grep -q "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg"
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18080/api/targets)
+          if [ "$code" = "404" ]; then echo "unbuilt API surface 404s - OK"; else echo "::error::/api/targets returned $code, want 404"; kill $SRV; exit 1; fi
+          kill $SRV
+          rm -f /tmp/ci.db*
+      # The documented deploy path must build.
+      - name: docker build
+        run: docker build -t oneprobe-ci .
