@@ -18,7 +18,8 @@ import (
 // SchemaVersion is the current SQLite schema version, recorded in meta.
 // v1: fused metric identity in samples.metric.
 // v2: samples split into name + labels columns; scrapes table added.
-const SchemaVersion = 2
+// v3: alert_events table (append-only alert transition history).
+const SchemaVersion = 3
 
 // Target is one Prometheus-format scrape destination. It is an alias
 // for scrape.Target: the type lives in scrape because store imports
@@ -105,6 +106,13 @@ CREATE TABLE IF NOT EXISTS alert_state (
 	last_value  REAL    NOT NULL DEFAULT 0,
 	last_eval_at INTEGER NOT NULL,
 	changed_at  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alert_events (
+	id      INTEGER PRIMARY KEY AUTOINCREMENT,
+	rule_id INTEGER NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+	state   TEXT    NOT NULL,
+	value   REAL    NOT NULL DEFAULT 0,
+	at      INTEGER NOT NULL
 );
 `
 
@@ -206,6 +214,10 @@ func (s *Store) migrate() error {
 		if err := s.migrateV1toV2(); err != nil {
 			return err
 		}
+		// v2→v3 is additive (alert_events created by baseSchema's IF
+		// NOT EXISTS above); fall through to the version bump.
+	case 2:
+		// alert_events already created by baseSchema; nothing to move.
 	default:
 		return fmt.Errorf("unknown schema version %d", v)
 	}

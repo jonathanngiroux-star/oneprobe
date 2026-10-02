@@ -38,7 +38,11 @@ Currently working:
   dashboard-export diff with mapped / partial / unmapped / risks, run on
   the committed sample fixture or your own export
 - `oneprobe serve` — HTTP server with `/healthz`, `/donate`, the API,
-  and the embedded UI (targets, scrapes, alerts, one graph)
+  and the embedded GUI (targets with last-error column, scrapes, alert
+  rules with history, the query graph, the Datadog dry-run screen with
+  paste/file input, the retention note)
+- `POST /api/migrate/datadog` — the dry-run report from a pasted
+  dashboard export (the GUI's path; the CLI reads a file)
 
 Planned (MVP order, see AGENTS.md): monitor-export migration, retention
 sweep automation, README deploy timing refresh.
@@ -52,6 +56,11 @@ go build -o oneprobe ./cmd/oneprobe
 ./oneprobe serve --db /tmp/oneprobe.db --http 127.0.0.1:8080
 ```
 
+**Open the GUI:** point a browser at `http://127.0.0.1:8080/` —
+targets, recent scrapes with errors, the query graph, alert rules with
+history, the Datadog dry-run screen, and the retention note are all
+there. The donate page is at `http://127.0.0.1:8080/donate`.
+
 Or with Docker (image built from this repo):
 
 ```
@@ -63,7 +72,7 @@ Then check liveness and the donation page:
 
 ```
 curl http://127.0.0.1:8080/healthz   # -> ok
-curl http://127.0.0.1:8080/donate    # -> donation addresses, plain text
+curl http://127.0.0.1:8080/donate    # -> donate page (HTML)
 ```
 
 Measured cold start (image already built): **0.87s** from `docker run`

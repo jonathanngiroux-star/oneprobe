@@ -24,6 +24,12 @@ type EvalStore interface {
 	QuerySeries(name string, fromMs, toMs int64) ([]store.Series, error)
 }
 
+// EventRecorder is the optional alert-history extension of EvalStore.
+// Stores that implement it get an append-only event per transition.
+type EventRecorder interface {
+	RecordAlertEvent(ruleID int64, state string, value float64, at time.Time) error
+}
+
 // Engine evaluates rules at each tick.
 type Engine struct {
 	store   EvalStore
@@ -117,6 +123,10 @@ func (e *Engine) transition(r store.AlertRule, state string, value float64, now 
 	_ = e.store.SetAlertState(r.ID, state, value, now)
 	if prev.State == state {
 		return
+	}
+	// History hook: append the transition if the store supports it.
+	if hs, ok := e.store.(EventRecorder); ok {
+		_ = hs.RecordAlertEvent(r.ID, state, value, now)
 	}
 	switch state {
 	case "firing":

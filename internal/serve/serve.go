@@ -6,6 +6,7 @@ package serve
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,7 +16,7 @@ import (
 	"time"
 
 	"github.com/jonathanngiroux-star/oneprobe/internal/alert"
-	"github.com/jonathanngiroux-star/oneprobe/internal/donate"
+	"github.com/jonathanngiroux-star/oneprobe/internal/migrate/datadog"
 	"github.com/jonathanngiroux-star/oneprobe/internal/query"
 	"github.com/jonathanngiroux-star/oneprobe/internal/scrape"
 	"github.com/jonathanngiroux-star/oneprobe/internal/store"
@@ -115,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/scrapes", s.handleRecentScrapes)
 	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/alerts/", s.handleAlertSubresources)
+	mux.HandleFunc("/api/migrate/datadog", s.handleMigrateDatadog)
 	mux.HandleFunc("/", s.handleUI)
 
 	return mux
@@ -137,9 +139,9 @@ func (s *Server) handleDonate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(donate.PlainText()))
+	w.Write([]byte(ui.DonatePage()))
 }
 
 // handleTargets: GET lists all targets; POST registers one.
@@ -402,11 +404,56 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleAlertSubresources: DELETE /api/alerts/{id}.
+// handleMigrateDatadog: POST a Datadog dashboard export JSON body,
+// receive the dry-run diff report (mapped/partial/unmapped/risks).
+// The GUI's migrate screen calls this; the CLI reads a file instead.
+func (s *Server) handleMigrateDatadog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var dash datadog.Dashboard
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<20)).Decode(&dash); err != nil {
+		http.Error(w, "not a valid Datadog dashboard export: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	report := datadog.Diff(dash)
+	writeJSON(w, http.StatusOK, report)
+}
+
+// handleAlertSubresources: GET /api/alerts/{id}/history and DELETE
+// /api/alerts/{id}.
 func (s *Server) handleAlertSubresources(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/alerts/")
-	if rest == "" || strings.Contains(rest, "/") {
+	if rest == "" {
 		http.NotFound(w, r)
+		return
+	}
+	// /api/alerts/{id}/history
+	if idx := strings.IndexByte(rest, '/'); idx >= 0 {
+		id, err := strconv.ParseInt(rest[:idx], 10, 64)
+		if err != nil || rest[idx+1:] != "history" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		limit := 50
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 500 {
+				limit = v
+			}
+		}
+		events, err := s.store.AlertHistory(id, limit)
+		if err != nil {
+			http.Error(w, "alert history: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, events)
 		return
 	}
 	id, err := strconv.ParseInt(rest, 10, 64)

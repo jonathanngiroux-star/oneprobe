@@ -121,10 +121,30 @@ jobs:
           [ "$n" -ge 2 ] || { echo "::error::target not scraped twice in 20s"; kill $SRV; exit 1; }
           curl -sf http://127.0.0.1:18080/api/targets/1/scrapes | jq -e '.[0].ok==true and .[0].sample_count==2'
           curl -sf "http://127.0.0.1:18080/api/query?metric=ci_metric_total" | jq -e '.metric=="ci_metric_total" and (.points | length) >= 2'
-          # UI page serves with the graph panel and both addresses.
+          # UI page serves with the graph panel, both addresses, and
+          # every GUI screen's hooks.
           curl -sf http://127.0.0.1:18080/ | grep -q 'id="graph"'
+          curl -sf http://127.0.0.1:18080/ | grep -q 'id="migrate-heading"'
+          curl -sf http://127.0.0.1:18080/ | grep -q 'id="alert-history"'
+          curl -sf http://127.0.0.1:18080/ | grep -q 'id="retention-note"'
           curl -sf http://127.0.0.1:18080/ | grep -q "0x85ee7E71f762d772599cbF1EC20E651B30657521"
           curl -sf http://127.0.0.1:18080/ | grep -q "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg"
+          # Donate page is the HTML GUI with copy buttons, no payment form.
+          curl -sf http://127.0.0.1:18080/donate | grep -q "text/html"
+          curl -sf http://127.0.0.1:18080/donate | grep -qi "copy"
+          # Migrate dry-run through the GUI's endpoint (bad JSON named).
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18080/api/migrate/datadog \
+            -H 'Content-Type: application/json' -d '{"widgets":[]}')
+          [ "$code" = "200" ] || { echo "::error::migrate endpoint returned $code"; kill $SRV; exit 1; }
+          curl -sf -X POST http://127.0.0.1:18080/api/migrate/datadog \
+            -H 'Content-Type: application/json' -d '{"id":"x","title":"t","widgets":[]}' \
+            | jq -e '.source=="datadog" and .dry_run==true'
+          err=$(curl -s -X POST http://127.0.0.1:18080/api/migrate/datadog \
+            -H 'Content-Type: application/json' -d '{bad json')
+          echo "$err" | grep -q "not a valid Datadog dashboard export" \
+            || { echo "::error::bad migrate input not named: $err"; kill $SRV; exit 1; }
+          # Alert history endpoint: empty is [] never null.
+          curl -sf http://127.0.0.1:18080/api/alerts/1/history | jq -e 'type=="array"'
           kill $SRV
           rm -f /tmp/ci.db*
       # The documented deploy path must build.

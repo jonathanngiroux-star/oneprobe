@@ -38,7 +38,7 @@ func TestHealthzReturnsOK(t *testing.T) {
 	}
 }
 
-func TestDonateServesBothAddressesAsPlainText(t *testing.T) {
+func TestDonateServesBothAddressesAsHTMLPage(t *testing.T) {
 	srv := httptest.NewServer(newTestServer(t))
 	defer srv.Close()
 
@@ -50,17 +50,21 @@ func TestDonateServesBothAddressesAsPlainText(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}
-	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
-		t.Errorf("Content-Type = %q, want text/plain", ct)
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html (GUI donate page)", ct)
 	}
 	body := readAll(t, resp)
 	for _, want := range []string{
 		"0x85ee7E71f762d772599cbF1EC20E651B30657521",
 		"bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg",
+		"copy",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/donate body missing %q", want)
 		}
+	}
+	if strings.Contains(strings.ToLower(body), "stripe") {
+		t.Error("/donate must contain no payment form")
 	}
 }
 

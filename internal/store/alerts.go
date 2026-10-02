@@ -110,6 +110,58 @@ func (s *Store) GetAlertState(ruleID int64) (AlertState, error) {
 	return st, nil
 }
 
+// RecordAlertEvent appends one state transition to the alert history.
+// History is append-only; the engine writes on every transition.
+func (s *Store) RecordAlertEvent(ruleID int64, state string, value float64, at time.Time) error {
+	if state != "pending" && state != "firing" && state != "resolved" {
+		return fmt.Errorf("alert event state must be pending|firing|resolved, got %q", state)
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO alert_events (rule_id, state, value, at) VALUES (?, ?, ?, ?)`,
+		ruleID, state, value, at.Unix())
+	if err != nil {
+		return fmt.Errorf("record alert event: %w", err)
+	}
+	return nil
+}
+
+// AlertEvent is one historical state transition of a rule.
+type AlertEvent struct {
+	ID     int64     `json:"id"`
+	RuleID int64     `json:"rule_id"`
+	State  string    `json:"state"`
+	Value  float64   `json:"value"`
+	At     time.Time `json:"at"`
+}
+
+// AlertHistory returns a rule's transition events, newest first, at
+// most limit rows. Empty history is a non-nil empty slice.
+func (s *Store) AlertHistory(ruleID int64, limit int) ([]AlertEvent, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(
+		`SELECT id, rule_id, state, value, at FROM alert_events
+		 WHERE rule_id = ? ORDER BY at DESC, id DESC LIMIT ?`, ruleID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("alert history: %w", err)
+	}
+	defer rows.Close()
+	events := []AlertEvent{}
+	for rows.Next() {
+		var e AlertEvent
+		var at int64
+		if err := rows.Scan(&e.ID, &e.RuleID, &e.State, &e.Value, &at); err != nil {
+			return nil, fmt.Errorf("scan alert event: %w", err)
+		}
+		e.At = time.Unix(at, 0).UTC()
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
 // SetAlertState persists an evaluation result. A state *transition*
 // (firing→resolved etc.) moves changed_at; a same-state update only
 // refreshes last_value/last_eval_at.

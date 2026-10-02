@@ -14,9 +14,15 @@ func TestPageContainsThePanels(t *testing.T) {
 		`id="scrapes"`,
 		`id="graph"`,
 		`id="alerts"`,
+		`id="migrate-heading"`,
+		`id="alert-history"`,
+		`id="retention-note"`,
 		`fetch("/api/targets")`,
 		`fetch("/api/scrapes")`,
 		`fetch("/api/alerts")`,
+		`fetch("/api/migrate/datadog"`,
+		`/api/query?expr=`,
+		`/api/alerts/" + ruleId + "/history`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("UI page missing %q", want)
