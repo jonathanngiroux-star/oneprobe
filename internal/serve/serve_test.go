@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -67,15 +68,37 @@ func TestUnknownPathIs404(t *testing.T) {
 	srv := httptest.NewServer(newTestServer(t))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/targets")
+	// The unbuilt surface stays 404 — the catch-all must not swallow
+	// unknown API paths into some other handler.
+	resp, err := http.Get(srv.URL + "/api/logs")
 	if err != nil {
-		t.Fatalf("GET /api/targets: %v", err)
+		t.Fatalf("GET /api/logs: %v", err)
 	}
 	defer resp.Body.Close()
-	// The API surface does not exist yet; it must not be silently
-	// swallowed into some other handler.
 	if resp.StatusCode != 404 {
 		t.Errorf("status = %d, want 404 (unbuilt surface stays 404)", resp.StatusCode)
+	}
+}
+
+func TestTargetsAPIIntervalSerializesAsMilliseconds(t *testing.T) {
+	srv := httptest.NewServer(newTestServer(t))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/api/targets", "application/json",
+		strings.NewReader(`{"name":"t","url":"http://127.0.0.1:9999/metrics","interval":2000}`))
+	if err != nil {
+		t.Fatalf("POST /api/targets: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 201 {
+		t.Fatalf("status = %d, want 201", resp.StatusCode)
+	}
+	var created map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got, want := created["interval"], float64(2000); got != want {
+		t.Errorf("interval = %v, want %v (milliseconds, not nanoseconds)", got, want)
 	}
 }
 

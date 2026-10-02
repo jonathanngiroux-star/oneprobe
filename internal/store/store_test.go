@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/jonathanngiroux-star/oneprobe/internal/scrape"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -42,7 +44,7 @@ func TestAddTargetAndListTargetsRoundTrips(t *testing.T) {
 	added, err := s.AddTarget(Target{
 		Name:     "web-1",
 		URL:      "http://127.0.0.1:9100/metrics",
-		Interval: 15 * time.Second,
+		Interval: scrape.Millis(15 * time.Second),
 		Enabled:  true,
 	})
 	if err != nil {
@@ -52,7 +54,7 @@ func TestAddTargetAndListTargetsRoundTrips(t *testing.T) {
 		t.Errorf("AddTarget did not assign an ID")
 	}
 	// Upsert on the same URL updates, not duplicates.
-	second, err := s.AddTarget(Target{Name: "web-1-rename", URL: "http://127.0.0.1:9100/metrics", Interval: 30 * time.Second, Enabled: true})
+	second, err := s.AddTarget(Target{Name: "web-1-rename", URL: "http://127.0.0.1:9100/metrics", Interval: scrape.Millis(30 * time.Second), Enabled: true})
 	if err != nil {
 		t.Fatalf("AddTarget upsert: %v", err)
 	}
@@ -68,17 +70,17 @@ func TestAddTargetAndListTargetsRoundTrips(t *testing.T) {
 		t.Fatalf("len(ListTargets()) = %d, want 1", len(targets))
 	}
 	got := targets[0]
-	if got.Name != "web-1-rename" || got.Interval != 30*time.Second || !got.Enabled {
+	if got.Name != "web-1-rename" || got.Interval != scrape.Millis(30*time.Second) || !got.Enabled {
 		t.Errorf("round-trip mismatch: %+v", got)
 	}
-	if !got.CreatedAt.Equal(now) && got.CreatedAt.IsZero() {
+	if !time.Time(got.CreatedAt).Equal(now) && time.Time(got.CreatedAt).IsZero() {
 		t.Errorf("CreatedAt not stored: %+v", got)
 	}
 }
 
 func TestTargetValidationRejectsBadInput(t *testing.T) {
 	s := openTestStore(t)
-	if _, err := s.AddTarget(Target{Name: "x", URL: "not-a-url", Interval: time.Second}); err == nil {
+	if _, err := s.AddTarget(Target{Name: "x", URL: "not-a-url", Interval: scrape.Millis(time.Second)}); err == nil {
 		t.Error("AddTarget must reject a URL without a scheme/host")
 	}
 	if _, err := s.AddTarget(Target{Name: "x", URL: "http://127.0.0.1:9100/metrics", Interval: 0}); err == nil {
@@ -88,7 +90,7 @@ func TestTargetValidationRejectsBadInput(t *testing.T) {
 
 func TestDeleteTargetRemovesRow(t *testing.T) {
 	s := openTestStore(t)
-	tg, err := s.AddTarget(Target{Name: "gone", URL: "http://127.0.0.1:9999/metrics", Interval: time.Minute, Enabled: true})
+	tg, err := s.AddTarget(Target{Name: "gone", URL: "http://127.0.0.1:9999/metrics", Interval: scrape.Millis(time.Minute), Enabled: true})
 	if err != nil {
 		t.Fatalf("AddTarget: %v", err)
 	}

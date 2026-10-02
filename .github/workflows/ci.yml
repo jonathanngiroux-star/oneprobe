@@ -15,7 +15,9 @@ jobs:
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - name: vet
         run: go vet ./...
-      - name: test
+      - name: test (race on the concurrent packages)
+        run: go test -race ./internal/scrape/ ./internal/store/ ./internal/serve/
+      - name: test (all)
         run: go test ./...
       - name: build
         run: go build -o oneprobe ./cmd/oneprobe
@@ -54,17 +56,39 @@ jobs:
         run: |
           ./oneprobe donate | grep -q "0x85ee7E71f762d772599cbF1EC20E651B30657521"
           ./oneprobe donate | grep -q "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg"
-      # serve must boot, answer /healthz and /donate, and 404 unbuilt surfaces.
-      - name: serve smoke (boot + healthz + donate + 404)
+      # serve must boot, answer /healthz and /donate, 404 unbuilt
+      # surfaces, and run the scrape loop end-to-end: register a
+      # fixture target, see it scraped, query the samples back.
+      - name: serve smoke (boot + scrape + query + shutdown)
         run: |
+          mkdir -p /tmp/fixt
+          printf '# HELP up Up\n# TYPE up gauge\nup 1\nci_metric_total 5\n' > /tmp/fixt/metrics
+          (python3 -m http.server 19222 --directory /tmp/fixt >/dev/null 2>&1 &)
           ./oneprobe serve --db /tmp/ci.db --http 127.0.0.1:18080 &
           SRV=$!
           for i in $(seq 1 15); do curl -sf http://127.0.0.1:18080/healthz >/dev/null && break; sleep 1; done
           test "$(curl -sf http://127.0.0.1:18080/healthz)" = "ok"
           curl -sf http://127.0.0.1:18080/donate | grep -q "0x85ee7E71f762d772599cbF1EC20E651B30657521"
           curl -sf http://127.0.0.1:18080/donate | grep -q "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg"
-          code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18080/api/targets)
-          if [ "$code" = "404" ]; then echo "unbuilt API surface 404s - OK"; else echo "::error::/api/targets returned $code, want 404"; kill $SRV; exit 1; fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:18080/api/logs)
+          if [ "$code" = "404" ]; then echo "unbuilt API surface 404s - OK"; else echo "::error::/api/logs returned $code, want 404"; kill $SRV; exit 1; fi
+          # Register the fixture target with a 1s interval.
+          curl -sf -X POST http://127.0.0.1:18080/api/targets \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"ci","url":"http://127.0.0.1:19222/metrics","interval":1000}' \
+            | grep -q '"interval":1000'
+          # Wait for the loop to scrape twice, then query the samples.
+          for i in $(seq 1 20); do
+            n=$(curl -sf http://127.0.0.1:18080/api/targets/1/scrapes | jq 'length')
+            [ "$n" -ge 2 ] && break; sleep 1
+          done
+          [ "$n" -ge 2 ] || { echo "::error::target not scraped twice in 20s"; kill $SRV; exit 1; }
+          curl -sf http://127.0.0.1:18080/api/targets/1/scrapes | jq -e '.[0].ok==true and .[0].sample_count==2'
+          curl -sf "http://127.0.0.1:18080/api/query?metric=ci_metric_total" | jq -e '.metric=="ci_metric_total" and (.points | length) >= 2'
+          # UI page serves with the graph panel and both addresses.
+          curl -sf http://127.0.0.1:18080/ | grep -q 'id="graph"'
+          curl -sf http://127.0.0.1:18080/ | grep -q "0x85ee7E71f762d772599cbF1EC20E651B30657521"
+          curl -sf http://127.0.0.1:18080/ | grep -q "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg"
           kill $SRV
           rm -f /tmp/ci.db*
       # The documented deploy path must build.
