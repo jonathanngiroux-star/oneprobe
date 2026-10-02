@@ -56,6 +56,42 @@ jobs:
         run: |
           ./oneprobe donate | grep -q "0x85ee7E71f762d772599cbF1EC20E651B30657521"
           ./oneprobe donate | grep -q "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg"
+      # Query subset contract: the documented expressions evaluate; an
+      # undocumented function is a 400 that names it.
+      - name: query gate
+        run: |
+          ./oneprobe serve --db /tmp/qgate.db --http 127.0.0.1:18081 &
+          SRV=$!
+          for i in $(seq 1 15); do curl -sf http://127.0.0.1:18081/healthz >/dev/null && break; sleep 1; done
+          code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:18081/api/query?expr=sum(up)")
+          [ "$code" = "200" ] || { echo "::error::sum(up) returned $code"; kill $SRV; exit 1; }
+          curl -sf "http://127.0.0.1:18081/api/query?expr=up" | jq -e '.series' >/dev/null
+          err=$(curl -s "http://127.0.0.1:18081/api/query?expr=histogram_quantile(0.9,x)")
+          echo "$err" | grep -q 'unsupported function "histogram_quantile"' \
+            || { echo "::error::bad expr not named: $err"; kill $SRV; exit 1; }
+          code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:18081/api/query?expr=histogram_quantile(0.9,x)")
+          [ "$code" = "400" ] || { echo "::error::bad expr returned $code, want 400"; kill $SRV; exit 1; }
+          kill $SRV
+          rm -f /tmp/qgate.db*
+      # Alerts contract: a rule that matches nothing stays resolved; a
+      # violating rule fires; the API lists both states.
+      - name: alert gate
+        run: |
+          ./oneprobe serve --db /tmp/agate.db --http 127.0.0.1:18082 &
+          SRV=$!
+          for i in $(seq 1 15); do curl -sf http://127.0.0.1:18082/healthz >/dev/null && break; sleep 1; done
+          curl -sf -X POST http://127.0.0.1:18082/api/alerts \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"nothing","expr":"no_such_metric","op":"<","value":1,"enabled":true}' | jq -e '.id > 0'
+          curl -sf -X POST http://127.0.0.1:18082/api/alerts \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"bad-op","expr":"up","op":"~","value":1}' > /tmp/badop.json
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18082/api/alerts \
+            -H 'Content-Type: application/json' -d '{"name":"bad-op2","expr":"up","op":"~","value":1}')
+          [ "$code" = "400" ] || { echo "::error::bad op returned $code"; kill $SRV; exit 1; }
+          curl -sf http://127.0.0.1:18082/api/alerts | jq -e 'length==1 and .[0].state=="resolved"'
+          kill $SRV
+          rm -f /tmp/agate.db*
       # serve must boot, answer /healthz and /donate, 404 unbuilt
       # surfaces, and run the scrape loop end-to-end: register a
       # fixture target, see it scraped, query the samples back.

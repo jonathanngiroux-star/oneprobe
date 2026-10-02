@@ -85,7 +85,7 @@ func (s *Store) QueryRange(name string, fromMs, toMs int64) ([]Point, error) {
 		return nil, fmt.Errorf("query range: %w", err)
 	}
 	defer rows.Close()
-	var points []Point
+	points := []Point{}
 	for rows.Next() {
 		var p Point
 		if err := rows.Scan(&p.Name, &p.Labels, &p.Ts, &p.Value); err != nil {
@@ -160,7 +160,8 @@ func (s *Store) RecordScrape(targetID int64, at time.Time, durationMs int64, sam
 }
 
 // ListScrapes returns the most recent scrape outcomes for a target,
-// newest first, at most limit rows.
+// newest first, at most limit rows. An empty result is a non-nil
+// (marshals as []).
 func (s *Store) ListScrapes(targetID int64, limit int) ([]ScrapeMeta, error) {
 	if limit <= 0 {
 		limit = 10
@@ -173,7 +174,7 @@ func (s *Store) ListScrapes(targetID int64, limit int) ([]ScrapeMeta, error) {
 		return nil, fmt.Errorf("list scrapes: %w", err)
 	}
 	defer rows.Close()
-	var out []ScrapeMeta
+	out := []ScrapeMeta{}
 	for rows.Next() {
 		var m ScrapeMeta
 		var atMs int64
@@ -195,7 +196,7 @@ func (s *Store) SeriesNames() ([]string, error) {
 		return nil, fmt.Errorf("series names: %w", err)
 	}
 	defer rows.Close()
-	var names []string
+	names := []string{}
 	for rows.Next() {
 		var n string
 		if err := rows.Scan(&n); err != nil {

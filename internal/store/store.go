@@ -135,18 +135,17 @@ type Store struct {
 // Open creates or opens the SQLite file, applies the schema, and
 // migrates older schema versions in place.
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	// Pragmas ride the DSN so they apply to EVERY pooled connection —
+	// a bare Exec after Open only affects one pooled connection, which
+	// is exactly how "ON DELETE CASCADE silently does nothing" ships.
+	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
-	// Single-writer pragmas: WAL for concurrent reads during scrapes,
-	// busy_timeout for plain write contention. Multi-statement write
-	// transactions are serialized by Store.writeMu in-process.
-	if _, err := db.Exec(`PRAGMA journal_mode = WAL;
-PRAGMA busy_timeout = 5000;
-PRAGMA foreign_keys = ON;`); err != nil {
+	if _, err := db.Exec(`SELECT 1`); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("pragmas: %w", err)
+		return nil, fmt.Errorf("ping %s: %w", path, err)
 	}
 	// Version-independent base DDL first: on a v1 file the existing
 	// samples table is left alone by IF NOT EXISTS, and version-specific
@@ -356,7 +355,7 @@ func (s *Store) ListTargets() ([]Target, error) {
 		return nil, fmt.Errorf("list targets: %w", err)
 	}
 	defer rows.Close()
-	var targets []Target
+	targets := []Target{}
 	for rows.Next() {
 		var t Target
 		var intervalMs, enabled, createdAt int64

@@ -52,6 +52,18 @@ func Page() string {
 <table><thead><tr><th>target</th><th>at</th><th>duration</th><th>samples</th><th>status</th></tr></thead>
 <tbody id="scrapes"></tbody></table>
 
+<h2>Alerts</h2>
+<form id="add-alert">
+  <input name="name" placeholder="name" required>
+  <input name="expr" placeholder="expr, e.g. up" required size="24">
+  <select name="op"><option><</option><option><=</option><option>></option><option>>=</option><option>==</option><option>!=</option></select>
+  <input name="value" type="number" step="any" placeholder="0" required size="6">
+  <input name="for_secs" type="number" value="0" min="0" title="for (seconds)" size="4">
+  <button>Add alert rule</button>
+</form>
+<table><thead><tr><th>name</th><th>condition</th><th>state</th><th>value</th><th>since</th><th></th></tr></thead>
+<tbody id="alerts"></tbody></table>
+
 <h2>Graph</h2>
 <form id="query-form">
   <input name="metric" placeholder="metric name, e.g. up" required>
@@ -69,7 +81,14 @@ func Page() string {
 <script>
 var $ = function (sel) { return document.querySelector(sel); };
 function esc(s) {
-  return String(s).replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">").replace(/"/g, """);
+  // Entities are built from JS unicode escapes (\u0026 = "&") so the
+  // Go source never contains raw "&...;" sequences. & must be replaced
+  // first or the entities double-escape.
+  return String(s)
+    .replace(/&/g, "\u0026amp;")
+    .replace(/</g, "\u0026lt;")
+    .replace(/>/g, "\u0026gt;")
+    .replace(/"/g, "\u0026quot;");
 }
 
 function refreshTargets() {
@@ -116,6 +135,30 @@ function refreshScrapes() {
     tbody.innerHTML = html;
   }).catch(function (e) {
     tbody.innerHTML = "<tr><td colspan=5 class=error>" + esc(e) + "</td></tr>";
+  });
+}
+
+function refreshAlerts() {
+  var tbody = $("#alerts");
+  tbody.innerHTML = "<tr><td colspan=6 class=ok>loading...</td></tr>";
+  fetch("/api/alerts").then(function (r) { return r.json(); }).then(function (rules) {
+    if (!Array.isArray(rules) || rules.length === 0) {
+      tbody.innerHTML = "<tr><td colspan=6 class=ok>no alert rules yet — add one above</td></tr>";
+      return;
+    }
+    var html = "";
+    for (var i = 0; i < rules.length; i++) {
+      var a = rules[i];
+      var since = a.changed_at ? new Date(a.changed_at).toISOString() : "-";
+      html += "<tr><td>" + esc(a.name) + "</td><td>" + esc(a.expr) + " " + esc(a.op) +
+        " " + a.value + (a.for_secs ? " for " + a.for_secs + "s" : "") + "</td>" +
+        "<td class=\"" + (a.state === "firing" ? "error" : "ok") + "\">" + esc(a.state) + "</td>" +
+        "<td>" + a.last_value + "</td><td>" + since + "</td>" +
+        "<td><button data-id=\"" + a.id + "\" class=\"adel\">remove</button></td></tr>";
+    }
+    tbody.innerHTML = html;
+  }).catch(function (e) {
+    tbody.innerHTML = "<tr><td colspan=6 class=error>" + esc(e) + "</td></tr>";
   });
 }
 
@@ -182,9 +225,39 @@ $("#query-form").addEventListener("submit", function (ev) {
   plotMetric(ev.target.metric.value.trim());
 });
 
+$("#add-alert").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  var f = ev.target;
+  var body = {
+    name: f.name.value,
+    expr: f.expr.value,
+    op: f.op.value,
+    value: parseFloat(f.value.value),
+    for_secs: parseInt(f.for_secs.value, 10) || 0,
+  };
+  fetch("/api/alerts", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw t; });
+    f.reset();
+    refreshAlerts();
+  }).catch(function (t) { alert("add alert failed: " + t); });
+});
+
+$("#alerts").addEventListener("click", function (ev) {
+  if (!ev.target.classList.contains("adel")) return;
+  fetch("/api/alerts/" + ev.target.dataset.id, {method: "DELETE"}).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw t; });
+    refreshAlerts();
+  }).catch(function (t) { alert("delete failed: " + t); });
+});
+
 refreshTargets();
 refreshScrapes();
+refreshAlerts();
 setInterval(refreshScrapes, 5000);
+setInterval(refreshAlerts, 5000);
 </script>
 </body>
 </html>`)

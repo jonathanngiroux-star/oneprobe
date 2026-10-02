@@ -148,9 +148,53 @@ func Parse(body string) ([]Sample, error) {
 	return samples, nil
 }
 
+// exemplarStart finds the offset where an OpenMetrics exemplar trailer
+// (` # `) begins, ignoring occurrences inside quoted label values. -1
+// when there is none.
+func exemplarStart(line string) int {
+	for i := 0; i+2 < len(line); i++ {
+		if line[i] != ' ' || line[i+1] != '#' || line[i+2] != ' ' {
+			continue
+		}
+		if !insideQuotes(line, i) {
+			return i
+		}
+	}
+	return -1
+}
+
+// insideQuotes reports whether offset i sits inside a double-quoted
+// label value. A quote is a CLOSING quote only when preceded by an
+// even number of backslashes: in `x\\"` the second backslash is itself
+// escaped, so the `"` after it really closes.
+func insideQuotes(s string, upto int) bool {
+	inQuote := false
+	for i := 0; i < upto; i++ {
+		switch s[i] {
+		case '"':
+			if escapedHere(s, i) {
+				continue // escaped quote: value byte, no toggle
+			}
+			inQuote = !inQuote
+		}
+	}
+	return inQuote
+}
+
+// escapedHere reports whether the byte at i is preceded by an odd number
+// of backslashes (i.e. is itself escaped).
+func escapedHere(s string, i int) bool {
+	n := 0
+	for j := i - 1; j >= 0 && s[j] == '\\'; j-- {
+		n++
+	}
+	return n%2 == 1
+}
+
 func parseLine(line string, lineNo int) (Sample, error) {
-	// Strip an exemplar/trailer: everything from " # " onward.
-	if i := strings.Index(line, " # "); i >= 0 {
+	// Strip an exemplar/trailer: everything from " # " onward — but
+	// only OUTSIDE quotes, where ` # ` is legal label-value bytes.
+	if i := exemplarStart(line); i >= 0 {
 		line = strings.TrimSpace(line[:i])
 	}
 
@@ -188,7 +232,15 @@ func splitMetricIdentifier(line string) (name string, labels map[string]string, 
 	}
 	labels = map[string]string{}
 	if i < len(line) && line[i] == '{' {
-		end := strings.IndexByte(line[i:], '}')
+		// Find the label-set terminator: the first '}' OUTSIDE quotes
+		// ('}' is legal value bytes inside a quoted label).
+		end := -1
+		for j := i; j < len(line); j++ {
+			if line[j] == '}' && !insideQuotes(line, j) {
+				end = j - i
+				break
+			}
+		}
 		if end < 0 {
 			return "", nil, "", fmt.Errorf("unterminated label set")
 		}
@@ -241,7 +293,9 @@ func parseLabels(body string) (map[string]string, error) {
 	return labels, nil
 }
 
-// splitTopLevel splits on commas outside double quotes.
+// splitTopLevel splits on commas outside double quotes. A quote is a
+// CLOSING quote only when not escaped: `x\\"` ends the value (the
+// second backslash is itself escaped), `x\"` does not.
 func splitTopLevel(s string) []string {
 	var parts []string
 	last := 0
@@ -249,9 +303,8 @@ func splitTopLevel(s string) []string {
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
 		case '"':
-			// Escaped quotes don't toggle.
-			if i > 0 && s[i-1] == '\\' {
-				continue
+			if escapedHere(s, i) {
+				continue // escaped quote: value byte, no toggle
 			}
 			inQuote = !inQuote
 		case ',':

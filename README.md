@@ -27,15 +27,21 @@ infrastructure options above it.
 Currently working:
 
 - `oneprobe version`, `oneprobe donate`
-- SQLite storage layer (targets, samples, alert rules, alert state)
+- SQLite storage layer (targets, samples, scrapes, alert rules, alert state)
+- Prometheus text scrape loop (register a target, it scrapes on its interval)
+- The documented PromQL subset ([docs/query.md](docs/query.md)):
+  selectors, matchers, `rate`/`increase`, `sum`/`avg`/`max`/`min` with
+  `by`, comparisons — at `GET /api/query?expr=`
+- Local threshold alerts with a `for` duration, persisted state, and
+  log + webhook notifiers ([docs/alerts.md](docs/alerts.md))
 - `oneprobe migrate --from=datadog --dry-run --format=json` —
   dashboard-export diff with mapped / partial / unmapped / risks, run on
   the committed sample fixture or your own export
-- `oneprobe serve` — HTTP server with `/healthz` and `/donate`
+- `oneprobe serve` — HTTP server with `/healthz`, `/donate`, the API,
+  and the embedded UI (targets, scrapes, alerts, one graph)
 
-Planned (MVP order, see AGENTS.md): Prometheus scrape loop, the
-documented PromQL subset ([docs/query.md](docs/query.md)), local
-threshold alerts, monitor-export migration, the embedded UI.
+Planned (MVP order, see AGENTS.md): monitor-export migration, retention
+sweep automation, README deploy timing refresh.
 
 ## Quickstart
 
@@ -80,7 +86,7 @@ fixture maps to.
 
 | Command | What it does |
 |---|---|
-| `oneprobe serve` | HTTP server: `/healthz`, `/donate` (UI as it lands) |
+| `oneprobe serve` | HTTP server: `/healthz`, `/donate`, API, embedded UI |
 | `oneprobe migrate --from=datadog --dry-run` | Print a migration diff report for a Datadog dashboard export |
 | `oneprobe version` | Print binary name and version |
 | `oneprobe donate` | Print the donation addresses |
@@ -89,6 +95,7 @@ fixture maps to.
 
 - [docs/migrate.md](docs/migrate.md) — the dry-run report and its contract
 - [docs/query.md](docs/query.md) — the exact PromQL subset (the contract; CI enforces it)
+- [docs/alerts.md](docs/alerts.md) — alert rules, state machine, notifiers
 - [docs/fidelity/datadog.md](docs/fidelity/datadog.md) — honest fidelity numbers from the fixture
 - [docs/donate.md](docs/donate.md) — donations
 - [GOVERNANCE.md](GOVERNANCE.md) — DCO, license, wallet-change consensus
