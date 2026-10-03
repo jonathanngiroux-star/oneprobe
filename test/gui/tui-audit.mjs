@@ -45,7 +45,7 @@ let firstRenderAt = null;
 const bootAt = Date.now();
 term.onData(d => {
   all += d;
-  if (firstRenderAt === null && all.includes("Oneprobe — targets")) {
+  if (firstRenderAt === null && (all.includes("Oneprobe — targets") || all.includes("getting started"))) {
     firstRenderAt = Date.now() - bootAt;
   }
   // Answer terminal capability queries like a real terminal.
@@ -71,6 +71,15 @@ try {
     firstRenderAt !== null && firstRenderAt < 3000,
     firstRenderAt !== null ? `${firstRenderAt}ms` : "never rendered");
 
+  // 1b. Fresh db => the guided tour auto-opens; esc closes it.
+  const tourAuto = all.includes("getting started");
+  record("wizard auto-opens on fresh db", tourAuto);
+  await resetCapture();
+  term.write("\x1b"); // esc
+  const tourClosed = await until(() => all.includes("Oneprobe — targets") && !all.includes("tour, step"), 4000);
+  record("esc closes the wizard", tourClosed);
+  await resetCapture();
+
   // 2. Resize mid-run does not crash: shrink and grow.
   term.resize(80, 24);
   await sleep(300);
@@ -82,12 +91,14 @@ try {
   record("resize 80x24 -> 60x18 -> 120x40 no crash", true);
 
   // 3. Tab through every screen; each renders its header.
+  await resetCapture();
   const screens = ["scrapes", "query", "alerts", "migrate", "donate", "targets"];
   const seen = [];
   for (const s of screens) {
     term.write("\t");
     const ok = await until(() => all.includes(`Oneprobe — ${s}`), 5000);
     seen.push(ok ? s : `${s}(MISSING)`);
+    await resetCapture();
   }
   record("tab cycles through all 6 screens", seen.every(s => !s.includes("MISSING")),
     seen.join(","));
@@ -122,7 +133,69 @@ try {
   const donateOk = await until(() => all.includes(ETH) && all.includes(BTC), 5000);
   record("donate screen addresses byte-for-byte", donateOk);
 
-  // 7. Quit works (q on a non-input screen).
+  // 7. Wizard: ? reopens from any screen; enter walks all steps.
+  await resetCapture();
+  term.write("?");
+  const tour2 = await until(() => all.includes("getting started"), 5000);
+  record("? reopens the wizard", tour2);
+  let steps = 0;
+  let sawSteps = [];
+  while (steps < 12) {
+    // wait until step N+1's counter appears in the capture
+    const ok = await until(() => all.includes(`step ${steps + 1}/`), 3000);
+    if (!ok) break;
+    sawSteps.push(steps + 1);
+    if (steps + 1 === 7) { term.write("\r"); steps++; break; } // last page: finish
+    term.write("\r");
+    steps++;
+  }
+  const finishedTour = steps >= 7;
+  record("wizard steps through every page (" + steps + " steps)", finishedTour);
+  await resetCapture();
+
+  // 7b. Working-guide wizard: live actions produce real results.
+  await resetCapture();
+  term.write("?");
+  await until(() => all.includes("step 1/"), 4000); // Welcome
+  term.write("\r"); // -> targets step
+  await until(() => all.includes("Press n"), 4000);
+  term.write("n");
+  const listedTargets = await until(() => all.includes("live from your store") || all.includes("no targets yet"), 4000);
+  record("wizard action n lists real targets", listedTargets);
+  await resetCapture();
+  term.write("\r"); // -> scrapes step
+  await until(() => all.includes("Press n"), 4000);
+  term.write("n");
+  const listedScrapes = await until(() => all.includes("live from your store") || all.includes("no targets yet"), 4000);
+  record("wizard action n shows real scrape outcomes", listedScrapes);
+  await resetCapture();
+  term.write("\r"); // -> query step
+  await until(() => all.includes("Press t"), 4000);
+  term.write("t");
+  const ranQuery = await until(() => all.includes("sum(up) ->"), 4000);
+  record("wizard action t runs a real query", ranQuery);
+  await resetCapture();
+  term.write("\r"); // -> alerts step
+  await until(() => all.includes("Press a"), 4000);
+  term.write("a");
+  const madeRule = await until(() => all.includes("alert rule 'up-down' (up < 1) created for real"), 4000);
+  record("wizard action a creates a real alert rule", madeRule);
+  await resetCapture();
+  term.write("\r"); // -> migrate step
+  await until(() => all.includes("Press m"), 4000);
+  term.write("m");
+  const ranMigrate = await until(() => all.includes("real dry-run of the sample: mapped 1, partial 2, unmapped 1, risks 3"), 4000);
+  record("wizard action m dry-runs the real fixture", ranMigrate);
+  await resetCapture();
+
+  // finish the tour: donate page -> enter -> finished
+  term.write("\r"); // -> donate step
+  await until(() => all.includes("Donate"), 4000);
+  term.write("\r"); // finish
+  await until(() => all.includes("Oneprobe — targets"), 4000);
+
+  // 8. Quit works (q on a non-input screen).
+  await resetCapture();
   term.write("q");
   const exited = await new Promise(res => {
     term.onExit(() => res(true));

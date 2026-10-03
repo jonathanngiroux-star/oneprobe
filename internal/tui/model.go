@@ -53,6 +53,12 @@ type Model struct {
 	screen   Screen
 	quitting bool
 
+	// guided tour: auto-opens on an empty store; ? toggles from any
+	// screen; enter advances; esc skips.
+	wizard     bool
+	wizardStep int
+	wizardOut  string
+
 	tickEvery time.Duration
 
 	// inputs
@@ -104,6 +110,11 @@ func New(s *store.Store, opts ...Option) Model {
 		o(&m)
 	}
 	m.refresh()
+	// First run with nothing set up? Open the guided tour.
+	if len(m.targets) == 0 && len(m.alerts) == 0 {
+		m.wizard = true
+		m.wizardStep = 0
+	}
 	return m
 }
 
@@ -175,9 +186,52 @@ func (m Model) update(msg interface{}) Model {
 		return m
 
 	case keyMsg:
+		// The guided tour owns the keyboard while open.
+		if m.wizard {
+			switch string(msg) {
+			case "enter", " ", "tab":
+				m.wizardStep++
+				m.wizardOut = ""
+				if m.wizardStep >= len(wizardPages) {
+					m.wizard = false
+					m.wizardStep = 0
+					m.screen = ScreenTargets
+				} else {
+					m.screen = wizardPages[m.wizardStep].screen
+				}
+				return m
+			case "esc":
+				m.wizard = false
+				m.wizardStep = 0
+				m.wizardOut = ""
+				m.screen = ScreenTargets
+				return m
+			case "?":
+				m.wizard = false
+				m.wizardStep = 0
+				m.wizardOut = ""
+				return m
+			case "ctrl+c":
+				m.quitting = true
+				return m
+			default:
+				// Live actions: the tour is a working guide.
+				page := wizardPages[m.wizardStep]
+				if page.action == string(msg) {
+					m.wizardOut = m.runTourAction(page.action)
+					return m
+				}
+				return m // other keys wait for enter/esc
+			}
+		}
 		switch string(msg) {
 		case "ctrl+c":
 			m.quitting = true
+			return m
+		case "?":
+			m.wizard = true
+			m.wizardStep = 0
+			m.screen = wizardPages[0].screen
 			return m
 		case "q":
 			// q quits only outside a text-input screen — typing
@@ -295,10 +349,190 @@ func (m *Model) runMigrate() {
 	m.migrateOut = b.String()
 }
 
+// wizardPage is one step of the guided tour: a screen plus guidance.
+type wizardPage struct {
+	screen Screen
+	title  string
+	lines  []string
+	action string // optional: key that runs the workflow for real
+}
+
+// wizardPages: the step-by-step tour, one page per workflow, in the
+// order a new operator would actually use them.
+var wizardPages = []wizardPage{
+	{
+		screen: ScreenTargets,
+		title:  "getting started",
+		lines: []string{
+			"Welcome to Oneprobe. This tour walks every workflow.",
+			"6 steps. enter = next, esc = skip, ? reopens later.",
+		},
+	},
+	{
+		screen: ScreenTargets,
+		title:  "getting started",
+		lines: []string{
+			"STEP 1 - targets: oneprobe scrapes Prometheus-format",
+			"endpoints (http://host:9100/metrics). The GUI/API creates",
+			"them; this screen lists every target with its last",
+			"scrape error. Press n to list your targets right now.",
+		},
+		action: "n",
+	},
+	{
+		screen: ScreenScrapes,
+		title:  "getting started",
+		lines: []string{
+			"STEP 2 - scrapes: each target is fetched on its interval.",
+			"This screen shows the last outcome per target: duration,",
+			"sample count, and the failure text when a scrape fails.",
+			"Press n to show the latest real outcomes now.",
+		},
+		action: "n",
+	},
+	{
+		screen: ScreenQuery,
+		title:  "getting started",
+		lines: []string{
+			"STEP 3 - query: type a documented-subset expression and",
+			"press enter. Try: sum(up) or rate(errors_total[5m]).",
+			"Everything outside docs/query.md is refused by name.",
+			"Press t to run sum(up) against your real store now.",
+		},
+		action: "t",
+	},
+	{
+		screen: ScreenAlerts,
+		title:  "getting started",
+		lines: []string{
+			"STEP 4 - alerts: rules evaluate locally every 15s, e.g.",
+			"up < 1 fires when a target stops reporting. State",
+			"machine: resolved -> pending -> firing. Webhooks optional.",
+			"Press a to create that exact rule for real right now.",
+		},
+		action: "a",
+	},
+	{
+		screen: ScreenMigrate,
+		title:  "getting started",
+		lines: []string{
+			"STEP 5 - migrate: paste a Datadog dashboard export path",
+			"here and press enter to see what would translate",
+			"(mapped / partial / unmapped / risks). Nothing is written.",
+			"Press m to dry-run the committed sample fixture now.",
+		},
+		action: "m",
+	},
+	{
+		screen: ScreenDonate,
+		title:  "getting started",
+		lines: []string{
+			"STEP 6 - donate: Oneprobe is free to self-host. If it",
+			"replaces a Datadog dashboard week, donate. No feature",
+			"is ever gated on a donation. This is the whole tour.",
+			"",
+			"  Ethereum / USDC (ERC-20): " + donate.EthereumUSDC,
+			"  Bitcoin: " + donate.Bitcoin,
+		},
+	},
+}
+
+// runTourAction executes a tour step's live action against the REAL
+// store — the tour is a working guide, not prose.
+func (m *Model) runTourAction(action string) string {
+	switch action {
+	case "n": // list targets / scrape outcomes now
+		m.refresh()
+		var b strings.Builder
+		b.WriteString("live from your store:\n")
+		if len(m.targets) == 0 {
+			return "your store has no targets yet - add one via the GUI or POST /api/targets, then this lists them live"
+		}
+		if m.screen == ScreenScrapes {
+			for _, tg := range m.targets {
+				errTxt := "-"
+				if e, ok := m.lastErr[tg.ID]; ok && e != "" {
+					errTxt = e
+				}
+				fmt.Fprintf(&b, "  %s %s lastScrapeError=%s\n", tg.Name, tg.URL, errTxt)
+			}
+			return b.String()
+		}
+		for _, tg := range m.targets {
+			fmt.Fprintf(&b, "  %s %s %s\n", tg.Name, tg.URL, tg.Interval.Duration())
+		}
+		return b.String()
+	case "t": // run sum(up) for real
+		m.refresh()
+		node, err := query.Parse("sum(up)")
+		if err != nil {
+			return "internal: " + err.Error()
+		}
+		res, err := query.Eval(node, m.store, time.Now().UTC(), 5*time.Minute)
+		if err != nil {
+			return "eval: " + err.Error()
+		}
+		if len(res.Series) == 0 {
+			return "sum(up) -> 0 series (your store has no `up` samples yet - real answer)"
+		}
+		last := res.Series[0].Points[len(res.Series[0].Points)-1].Value
+		return fmt.Sprintf("sum(up) -> 1 series, current value %v (real evaluation)", last)
+	case "a": // create the up<1 rule for real
+		if _, err := m.store.AddAlertRule(store.AlertRule{
+			Name: "up-down", Expr: "up", Op: "<", Value: 1, Enabled: true,
+		}); err != nil {
+			return "could not create: " + err.Error()
+		}
+		m.refresh()
+		return "alert rule 'up-down' (up < 1) created for real - it evaluates every 15s now"
+	case "m": // dry-run the committed fixture
+		raw, err := readDashboardFile("testdata/fixtures/datadog/sample-dashboard.json")
+		if err != nil {
+			return "fixture missing: " + err.Error()
+		}
+		dash, err := decodeDashboard(raw, "sample-dashboard.json")
+		if err != nil {
+			return err.Error()
+		}
+		report := datadog.Diff(dash)
+		return fmt.Sprintf("real dry-run of the sample: mapped %d, partial %d, unmapped %d, risks %d",
+			len(report.Mapped), len(report.Partial), len(report.Unmapped), len(report.Risks))
+	}
+	return ""
+}
+
+// wizardView renders the tour banner over the current screen.
+func (m Model) wizardView() string {
+	page := wizardPages[m.wizardStep]
+	var b strings.Builder
+	fmt.Fprintf(&b, "Oneprobe — %s (tour, step %d/%d)\n\n", page.title, m.wizardStep+1, len(wizardPages))
+	for _, l := range page.lines {
+		b.WriteString("  " + l + "\n")
+	}
+	if m.wizardOut != "" {
+		b.WriteString("\n  result:\n")
+		for _, l := range strings.Split(strings.TrimRight(m.wizardOut, "\n"), "\n") {
+			b.WriteString("  | " + l + "\n")
+		}
+	}
+	if m.wizardStep == len(wizardPages)-1 {
+		b.WriteString("\n  enter: finish and start using Oneprobe\n")
+	} else {
+		b.WriteString("\n  enter: next step · esc: skip the tour · ctrl+c: quit\n")
+	}
+	return b.String()
+}
+
 // View renders the current screen. Pure.
 func (m Model) View() string {
 	if m.quitting {
 		return "bye\n"
+	}
+	if m.wizard {
+		view := m.wizardView()
+		view += "\n" + strings.Repeat("─", 60) + "\n"
+		view += "enter next step · esc skip · ? tour · q quit\n"
+		return view
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Oneprobe — %s\n\n", screenNames[m.screen])
@@ -369,9 +603,9 @@ func (m Model) View() string {
 
 	b.WriteString("\n" + strings.Repeat("─", 60) + "\n")
 	if m.screen == ScreenQuery || m.screen == ScreenMigrate {
-		b.WriteString("tab next screen · shift+tab back · enter submit · ctrl+c quit\n")
+		b.WriteString("tab next screen · shift+tab back · enter submit · ? tour · ctrl+c quit\n")
 	} else {
-		b.WriteString("tab next screen · shift+tab back · q quit\n")
+		b.WriteString("tab next screen · shift+tab back · ? tour · q quit\n")
 	}
 	return b.String()
 }

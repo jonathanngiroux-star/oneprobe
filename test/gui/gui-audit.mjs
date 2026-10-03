@@ -76,6 +76,14 @@ try {
   const emptyTargets = await page.locator("#targets td").first().textContent();
   record("targets empty state", /no targets yet/.test(emptyTargets), JSON.stringify(emptyTargets));
 
+  // Fresh db => the guided tour auto-opens; Esc dismisses it and the
+  // backdrop no longer intercepts clicks.
+  const tourOpen = await page.locator("#tour:not([hidden])").count();
+  record("gui tour auto-opens on fresh db", tourOpen === 1);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector("#tour").hidden);
+  record("gui tour esc-dismisses", true);
+
   // Keyboard path: focus the form, fill via keyboard, submit with Enter.
   await page.locator('#add-target input[name="name"]').click();
   await page.keyboard.type("gui-fixture");

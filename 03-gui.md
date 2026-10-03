@@ -84,6 +84,7 @@ Wails rules:
 - Desktop window on Linux is the required target. macOS/Windows if the toolchain is present, not instead of Linux.
 - Call existing store/eval/migrate functions. Do not fork a second data model for the window.
 - No subscription UI, no pricing table, no Stripe. Donate screen is a Wails view with both addresses and copy buttons.
+- A first-run wizard is mandatory. It is not a tooltip and not a README link. It walks the user step by step through setup and the core workflow, then can be reopened from the main view.
 - `wails build` must produce a local binary. Document `wails dev` in the README.
 
 Wails desktop GUI (github.com/wailsapp/wails), bound to the Go backend:
@@ -95,9 +96,17 @@ Wails desktop GUI (github.com/wailsapp/wails), bound to the Go backend:
 - Retention and backup note (copy the SQLite file)
 Ugly is fine. Accessible labels, keyboard path for every primary action, no external CDN required to function.
 
+Wizard (required in this step):
+- First launch opens the wizard before the main view.
+- Steps are specific to this product, in order, with Back / Next / Skip only where a step is truly optional.
+- Last step lands on the main view with something already created (a fixture import or a minimal object), not an empty screen.
+- A Help or "Open wizard" action reopens it.
+- Donate addresses appear on the last wizard step and on the donate view. No payment form.
+
 ## Definition of done
 
 - [ ] `wails dev` opens a window that reaches every wedge action listed above
+- [ ] First launch runs the wizard; the user can finish it without reading the README
 - [ ] `wails build` produces a binary
 - [ ] Donate view shows both addresses exactly
 - [ ] README says how to install the Wails CLI and open the GUI
@@ -109,5 +118,6 @@ Ugly is fine. Accessible labels, keyboard path for every primary action, no exte
 
 1. Add the Wails app (`wails.json`, `frontend/`, bound Go methods) beside the existing CLI.
 2. Implement the screens listed above by binding existing backend functions.
-3. Note `wails dev` in the README.
-4. Stop before the TUI and before visual polish that does not change a workflow.
+3. Implement the first-run wizard and the reopen action.
+4. Note `wails dev` in the README.
+5. Stop before the TUI and before visual polish that does not change a workflow.

@@ -78,13 +78,15 @@ oneprobe/
 Full audit and tests of the TUI. Fix bugs. Do not add features.
 
 Checks:
-- Keyboard coverage for every screen
-- Resize to 80x24 does not crash
+- Keyboard coverage for every screen, including the wizard
+- First launch on an empty data dir enters the wizard; finish creates the starter object
+- Reopen key works
+- Resize to 80x24 does not crash, including mid-wizard
 - Same fixture results as the CLI
 - Donate addresses exact
 - No blocking network on launch
 - `docs/audit/tui.md` listing bugs found and fixed
-- Scripted TUI test (send keys, assert output) where the stack allows it
+- Scripted TUI test (send keys through the wizard, assert output) where the stack allows it
 
 ## Definition of done
 

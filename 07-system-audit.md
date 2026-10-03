@@ -89,6 +89,7 @@ Also run:
 - Backend suite, Wails `wails build`, TUI suite, then one end-to-end script
 - `docker run` from a clean tree for the CLI
 - Confirm the GUI is still a Wails app (`wails.json` present, frontend bound to Go). A browser-only admin is a failed step 3.
+- Confirm both the Wails GUI and the TUI have a working first-run wizard that can be reopened
 - Search the repo for Stripe, subscription, "contact sales", Cloud Pro — delete or rewrite to donate
 - Confirm GOVERNANCE.md lists both addresses
 

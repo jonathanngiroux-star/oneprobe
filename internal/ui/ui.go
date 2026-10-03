@@ -34,6 +34,13 @@ func Page() string {
   textarea { width: 100%; font-family: ui-monospace, monospace; font-size: .8rem; }
   button { padding: .3rem .7rem; cursor: pointer; }
   #graph { margin-top: .5rem; min-height: 220px; }
+  #tour { position: fixed; inset: 0; z-index: 50; }
+  #tour[hidden] { display: none; }
+  #tour-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+  #tour-card { position: relative; margin: 12vh auto; max-width: 560px; padding: 1rem 1.25rem;
+               border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+               background: var(--bg, #fff); border-radius: 6px; }
+  #tour-controls { display: flex; gap: .5rem; margin-top: .9rem; }
   footer { margin-top: 2rem; padding-top: .75rem; border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent); font-size: .8rem; }
   .error { color: #b00; }
   .ok { opacity: .75; }
@@ -45,7 +52,23 @@ func Page() string {
 </style>
 </head>
 <body>
-<h1>Oneprobe</h1>
+<h1>Oneprobe <button type="button" id="tour-open" title="guided tour" aria-label="Open the guided tour">? tour</button></h1>
+<div id="tour" hidden aria-role="dialog" aria-label="guided tour">
+  <div id="tour-backdrop"></div>
+  <div id="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title">
+    <p class="note" id="tour-count"></p>
+    <h3 id="tour-title"></h3>
+    <div id="tour-body"></div>
+    <div id="tour-action"></div>
+    <div id="tour-result" class="note" aria-live="polite"></div>
+    <div id="tour-controls">
+      <button type="button" id="tour-skip">Skip tour</button>
+      <span style="flex:1"></span>
+      <button type="button" id="tour-prev">Back</button>
+      <button type="button" id="tour-next">Next</button>
+    </div>
+  </div>
+</div>
 
 <h2 id="targets-heading">Targets</h2>
 <form id="add-target" aria-labelledby="targets-heading">
@@ -413,6 +436,214 @@ $("#migrate-file").addEventListener("change", function (ev) {
   };
   reader.readAsText(file);
 });
+
+// ---- guided tour -----------------------------------------------------
+// One step per workflow. The tour auto-opens when the store is empty
+// (first run), remembers dismissal in localStorage, and reopens from
+// the "? tour" button next to the title.
+var ETH_ADDR = "0x85ee7E71f762d772599cbF1EC20E651B30657521";
+var BTC_ADDR = "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg";
+var tourSteps = [
+  {
+    title: "Welcome to Oneprobe",
+    body: "This tour completes every workflow for real: you will " +
+          "create a target, watch it scrape, run a query, set an " +
+          "alert, and dry-run a Datadog migration - all inside this " +
+          "guide. One binary, your own SQLite, free to self-host.",
+    action: "",
+  },
+  {
+    title: "Step 1 - Add a target",
+    body: "Give Oneprobe a Prometheus-format endpoint to scrape. " +
+          "Fill the fields and press Create target - it happens " +
+          "right here in the tour.",
+    action: '<label>Name <input id="tour-f-name" value="my-node"></label>' +
+            '<label>URL <input id="tour-f-url" value="http://127.0.0.1:8080/healthz" size="34"></label>' +
+            '<label>Interval&nbsp;ms <input id="tour-f-interval" type="number" value="5000"></label>' +
+            '<button type="button" id="tour-act-target">Create target</button>',
+  },
+  {
+    title: "Step 2 - Watch scrapes land",
+    body: "Your target is now scraping on its interval. Recent " +
+          "outcomes appear below - hit refresh to see the latest. " +
+          "Failures show the exact error text.",
+    action: '<button type="button" id="tour-act-refresh">Refresh scrapes</button>',
+  },
+  {
+    title: "Step 3 - Query the data",
+    body: "Type a documented-subset expression and press Run query. " +
+          "The result below comes from the real engine.",
+    action: '<label>Expression <input id="tour-f-expr" value="sum(up)" size="30"></label>' +
+            '<button type="button" id="tour-act-query">Run query</button>',
+  },
+  {
+    title: "Step 4 - Set an alert",
+    body: "Create a real rule: expression, comparison, value. It " +
+          "evaluates locally every 15s from now on.",
+    action: '<label>Name <input id="tour-f-aname" value="up-down"></label>' +
+            '<label>Expr <input id="tour-f-aexpr" value="up" size="18"></label>' +
+            '<label>Op <select id="tour-f-aop">' +
+            '<option value="<"><</option><option value="<="><=</option>' +
+            '<option value=">">></option><option value=">=">>=</option>' +
+            '<option value="==">==</option><option value="!=">!=</option></select></label>' +
+            '<label>Value <input id="tour-f-avalue" type="number" step="any" value="1" size="5"></label>' +
+            '<button type="button" id="tour-act-alert">Create alert rule</button>',
+  },
+  {
+    title: "Step 5 - Dry-run a Datadog migration",
+    body: "Press Dry-run to run the committed sample dashboard " +
+          "through the real classifier. Nothing is written - you " +
+          "get the honest mapped/partial/unmapped/risks report.",
+    action: '<button type="button" id="tour-act-migrate">Dry-run sample dashboard</button>',
+  },
+  {
+    title: "Step 6 - Donate (optional)",
+    body: "Everything you just did is free forever. If Oneprobe " +
+          "replaces a Datadog dashboard week, donate - no feature " +
+          "is ever gated on it.<br>" +
+          "Ethereum / USDC (ERC-20): <code>" + ETH_ADDR + "</code><br>" +
+          "Bitcoin: <code>" + BTC_ADDR + "</code>",
+    action: "",
+  },
+];
+
+function tourShow(i) {
+  var step = tourSteps[i];
+  $("#tour-count").textContent = "step " + (i + 1) + " of " + tourSteps.length;
+  $("#tour-title").textContent = step.title;
+  $("#tour-body").innerHTML = step.body;
+  $("#tour-action").innerHTML = step.action || "";
+  $("#tour-result").textContent = "";
+  $("#tour-next").textContent = i === tourSteps.length - 1 ? "Finish" : "Next";
+  $("#tour-prev").disabled = i === 0;
+  $("#tour").dataset.step = String(i);
+  $("#tour").hidden = false;
+  tourWireStep();
+  $("#tour-next").focus();
+}
+
+function tourDone(msg) { $("#tour-result").textContent = msg; }
+
+// The committed sample dashboard, embedded for the migrate step.
+var TOUR_SAMPLE = {"id":"tour-1","title":"Oneprobe Sample","widgets":[
+  {"id":1,"type":"timeseries","title":"CPU","requests":[{"q":"avg:system.cpu.user{host:web-1}"}]},
+  {"id":2,"type":"check_status","title":"Synthetics","requests":[{"q":"\"synthetics\" in (\"check_state\")"}]}
+]};
+
+function tourDoCreateTarget() {
+  var body = {
+    name: $("#tour-f-name").value || "my-node",
+    url: $("#tour-f-url").value,
+    interval: parseInt($("#tour-f-interval").value, 10) || 5000
+  };
+  fetch("/api/targets", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw t; });
+    return r.json();
+  }).then(function (t) {
+    tourDone("Target created (id " + t.id + ") - now scraping every " + (t.interval / 1000) + "s. Press Next.");
+    refreshTargets(); refreshScrapes();
+  }).catch(function (e) { tourDone("failed: " + e); });
+}
+
+function tourDoQuery() {
+  var expr = $("#tour-f-expr").value;
+  fetch("/api/query?expr=" + encodeURIComponent(expr))
+    .then(function (r) { if (!r.ok) return r.text().then(function (t) { throw t; }); return r.json(); })
+    .then(function (data) {
+      var n = (data.series || []).length;
+      tourDone(expr + " -> " + n + " series" + (n ? " (see values in the result rows)" : " - no samples in this store yet, that is a valid answer"));
+    })
+    .catch(function (e) { tourDone("query refused: " + e); });
+}
+
+function tourDoCreateAlert() {
+  var body = {
+    name: $("#tour-f-aname").value || "up-down",
+    expr: $("#tour-f-aexpr").value || "up",
+    op: $("#tour-f-aop").value || "<",
+    value: parseFloat($("#tour-f-avalue").value) || 1,
+    enabled: true
+  };
+  fetch("/api/alerts", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function (t) { throw t; });
+    return r.json();
+  }).then(function (a) {
+    tourDone("Alert rule created (id " + a.id + "): " + body.expr + " " + body.op + " " + body.value + " - evaluating locally every 15s. Press Next.");
+    refreshAlerts();
+  }).catch(function (e) { tourDone("failed: " + e); });
+}
+
+function tourDoMigrate() {
+  fetch("/api/migrate/datadog", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(TOUR_SAMPLE)
+  }).then(function (r) { if (!r.ok) return r.text().then(function (t) { throw t; }); return r.json(); })
+    .then(function (rep) {
+      tourDone("Sample dry-run: mapped " + (rep.mapped || []).length + ", partial " + (rep.partial || []).length +
+               ", unmapped " + (rep.unmapped || []).length + ", risks " + (rep.risks || []).length +
+               " - the full table is below in the migrate section.");
+    })
+    .catch(function (e) { tourDone("failed: " + e); });
+}
+
+function tourWireStep() {
+  var el = $("#tour-action");
+  el.onclick = function (ev) {
+    var id = ev.target && ev.target.id;
+    if (id === "tour-act-target") tourDoCreateTarget();
+    else if (id === "tour-act-refresh") { refreshScrapes(); tourDone("Scrape list refreshed - the latest outcomes are in the Recent scrapes panel."); }
+    else if (id === "tour-act-query") tourDoQuery();
+    else if (id === "tour-act-alert") tourDoCreateAlert();
+    else if (id === "tour-act-migrate") tourDoMigrate();
+  };
+}
+function tourClose(remember) {
+  $("#tour").hidden = true;
+  if (remember) {
+    try { localStorage.setItem("tourDone", "1"); } catch (e) {}
+  }
+}
+var tourIdx = 0;
+$("#tour-open").addEventListener("click", function () {
+  tourIdx = 0;
+  tourShow(tourIdx);
+});
+$("#tour-next").addEventListener("click", function () {
+  tourIdx++;
+  if (tourIdx >= tourSteps.length) { tourClose(true); return; }
+  tourShow(tourIdx);
+});
+$("#tour-prev").addEventListener("click", function () {
+  if (tourIdx > 0) { tourIdx--; tourShow(tourIdx); }
+});
+$("#tour-skip").addEventListener("click", function () { tourClose(true); });
+$("#tour-backdrop").addEventListener("click", function () { tourClose(true); });
+document.addEventListener("keydown", function (ev) {
+  if ($("#tour").hidden) return;
+  if (ev.key === "Escape") { tourClose(true); }
+  else if (ev.key === "ArrowRight") { $("#tour-next").click(); }
+  else if (ev.key === "ArrowLeft") { $("#tour-prev").click(); }
+  // Enter is deliberately NOT handled here: the focused Next/Finish
+  // button receives it natively — handling it here as well double-
+  // advances the tour (found in the live browser audit).
+});
+
+// Auto-open on a fresh install: no targets yet and the tour was never
+// dismissed.
+(function tourMaybeAutoOpen() {
+  var dismissed = false;
+  try { dismissed = localStorage.getItem("tourDone") === "1"; } catch (e) {}
+  if (dismissed) return;
+  fetch("/api/targets").then(function (r) { return r.json(); }).then(function (targets) {
+    if (Array.isArray(targets) && targets.length === 0) {
+      tourIdx = 0;
+      tourShow(tourIdx);
+    }
+  }).catch(function () {});
+})();
 
 refreshTargets();
 refreshScrapes();

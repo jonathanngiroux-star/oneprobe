@@ -13,9 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jonathanngiroux-star/oneprobe/internal/donate"
 	"github.com/jonathanngiroux-star/oneprobe/internal/migrate/datadog"
+	"github.com/jonathanngiroux-star/oneprobe/internal/query"
 	"github.com/jonathanngiroux-star/oneprobe/internal/serve"
 	"github.com/jonathanngiroux-star/oneprobe/internal/store"
 	"github.com/jonathanngiroux-star/oneprobe/internal/tui"
@@ -32,7 +34,8 @@ Commands:
   serve    Start the HTTP server (scrape, GUI, /healthz, /donate)
   tui      Terminal UI over the same store (tab/shift+tab screens, q quit)
   migrate  Dry-run a migration plan from an incumbent (e.g. Datadog)
-  query    Query stored samples (planned — see docs/query.md)
+  query    Evaluate a documented-subset expression against stored samples
+  alert    List alert rules with live state
   version  Print the binary name and version
   donate   Print donation addresses and exit
 
@@ -57,6 +60,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runServe(args[1:], stdout, stderr)
 	case "tui":
 		return runTUI(args[1:], stdout, stderr)
+	case "query":
+		return runQuery(args[1:], stdout, stderr)
+	case "alert":
+		return runAlert(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
 		fmt.Fprint(stderr, usage)
@@ -261,6 +268,122 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	if err := tui.Run(st); err != nil {
 		fmt.Fprintf(stderr, "tui: %v\n", err)
 		return 1
+	}
+	return 0
+}
+
+// runQuery evaluates one documented-subset expression against the
+// shared store and prints the result. Same engine as the GUI and TUI.
+// Usage: oneprobe query [--db path] <expr>
+func runQuery(args []string, stdout, stderr io.Writer) int {
+	dbPath := os.Getenv("ONEPROBE_DB")
+	if dbPath == "" {
+		dbPath = "oneprobe.db"
+	}
+	var expr string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case strings.HasPrefix(a, "--db="):
+			dbPath = strings.TrimPrefix(a, "--db=")
+		case a == "--db" && i+1 < len(args):
+			i++
+			dbPath = args[i]
+		case strings.HasPrefix(a, "--"):
+			fmt.Fprintf(stderr, "query: unknown flag %q\n", a)
+			return 2
+		default:
+			expr = a
+		}
+	}
+	if strings.TrimSpace(expr) == "" {
+		fmt.Fprintln(stderr, "query: an expression is required, e.g. oneprobe query 'sum(up)'")
+		fmt.Fprintln(stderr, "documented subset: docs/query.md")
+		return 2
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "query: cannot open %s: %v\n", dbPath, err)
+		return 1
+	}
+	defer st.Close()
+
+	node, err := query.Parse(expr)
+	if err != nil {
+		fmt.Fprintf(stderr, "query: %v\n", err)
+		return 1
+	}
+	res, err := query.Eval(node, st, time.Now().UTC(), 5*time.Minute)
+	if err != nil {
+		fmt.Fprintf(stderr, "query: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "%s -> %d series\n", expr, len(res.Series))
+	for i, sr := range res.Series {
+		if i >= 20 {
+			fmt.Fprintf(stdout, "  ... (%d more)\n", len(res.Series)-20)
+			break
+		}
+		last := 0.0
+		if len(sr.Points) > 0 {
+			last = sr.Points[len(sr.Points)-1].Value
+		}
+		fmt.Fprintf(stdout, "  %s%s = %v (%d points)\n", sr.Name, sr.Labels, last, len(sr.Points))
+	}
+	return 0
+}
+
+// runAlert lists alert rules with their live state from the shared
+// store (read-only; rules are managed via the GUI/TUI/API).
+// Usage: oneprobe alert [--db path]
+func runAlert(args []string, stdout, stderr io.Writer) int {
+	dbPath := os.Getenv("ONEPROBE_DB")
+	if dbPath == "" {
+		dbPath = "oneprobe.db"
+	}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case strings.HasPrefix(a, "--db="):
+			dbPath = strings.TrimPrefix(a, "--db=")
+		case a == "--db" && i+1 < len(args):
+			i++
+			dbPath = args[i]
+		default:
+			fmt.Fprintf(stderr, "alert: unknown flag %q\n", a)
+			return 2
+		}
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "alert: cannot open %s: %v\n", dbPath, err)
+		return 1
+	}
+	defer st.Close()
+
+	rules, err := st.ListAlertRules()
+	if err != nil {
+		fmt.Fprintf(stderr, "alert: %v\n", err)
+		return 1
+	}
+	if len(rules) == 0 {
+		fmt.Fprintln(stdout, "no alert rules (add one via the GUI, TUI, or POST /api/alerts)")
+		return 0
+	}
+	for _, r := range rules {
+		st, err := st.GetAlertState(r.ID)
+		state, since := "resolved", "-"
+		if err == nil {
+			state = st.State
+			if !st.ChangedAt.IsZero() {
+				since = st.ChangedAt.Format(time.RFC3339)
+			}
+		}
+		cond := fmt.Sprintf("%s %s %v", r.Expr, r.Op, r.Value)
+		if r.ForSecs > 0 {
+			cond += fmt.Sprintf(" for %ds", r.ForSecs)
+		}
+		fmt.Fprintf(stdout, "%-20s %-40s %-8s value=%v since %s\n", r.Name, cond, state, st.LastValue, since)
 	}
 	return 0
 }

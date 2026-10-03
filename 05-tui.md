@@ -85,18 +85,27 @@ Full Bubble Tea (or equivalent) TUI in the same binary (`oneprobe tui`):
 - Mouse optional; keyboard complete
 - Same data as the GUI; no second store
 
-Use Bubble Tea or an equivalent in-repo TUI. `oneprobe tui` must run against the same SQLite (or stated data dir) as the GUI. Donate screen required. No mouse-only actions. No subscription UI.
+Use Bubble Tea or an equivalent in-repo TUI. `oneprobe tui` must run against the same SQLite (or stated data dir) as the Wails GUI. Donate screen required. No mouse-only actions. No subscription UI.
+
+Wizard (required in this step):
+- First `tui` launch with an empty data dir opens a step-by-step wizard before the main screen.
+- Same job as the Wails wizard: setup, then one core workflow, then the main screen with something created.
+- Keys for Back / Next are documented. No mouse-only step.
+- A key reopens the wizard from the main screen.
+- Donate addresses on the last wizard step and the donate screen.
 
 ## Definition of done
 
 - [ ] TUI covers the workflows listed above
+- [ ] First launch runs the wizard without the README
 - [ ] Donate screen shows both addresses exactly
-- [ ] README says how to launch the TUI
-- [ ] GUI still works
+- [ ] README says how to launch the TUI and the wizard keys
+- [ ] Wails GUI still builds
 
 ## First response required
 
 1. Add the TUI package and `oneprobe tui`.
 2. Implement the screens against existing store APIs.
-3. Document keys.
-4. Stop before a new feature that is not on the list.
+3. Implement the first-run wizard and the reopen key.
+4. Document keys.
+5. Stop before a new feature that is not on the list.

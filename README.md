@@ -3,7 +3,12 @@
 Single-binary infrastructure monitoring: scrape Prometheus-format
 targets, store samples in embedded SQLite, query a small documented
 PromQL subset, evaluate alert rules locally, and dry-run a migration
-report against Datadog dashboard exports — one `docker run`, no
+report against Datadog dashboard exports — one **Guided tour:** the GUI and TUI both open a working step-by-step tour
+on a fresh install — it creates a real target, runs a real query,
+creates a real alert, and dry-runs the sample migration as you go.
+Reopen it any time with the `? tour` button (GUI) or the `?` key (TUI).
+
+`docker run`, no
 Kubernetes, no sidecars.
 
 Oneprobe is not a Datadog replacement catalog. It is the small,

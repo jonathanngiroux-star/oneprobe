@@ -91,10 +91,11 @@ GUI checks:
 Also:
 - `wails build` still succeeds
 - Bound Go methods return errors the frontend actually shows
-- Keyboard path for primary actions
+- Wizard: first launch, Back/Next, finish lands on a non-empty main view, reopen from Help
+- Keyboard path for primary actions and for the wizard
 - Empty, error, and loading states
 - No secrets in the window
-- Donate addresses byte-for-byte
+- Donate addresses byte-for-byte on the donate view and the last wizard step
 - `docs/audit/gui.md` listing bugs found and fixed
 
 ## Definition of done

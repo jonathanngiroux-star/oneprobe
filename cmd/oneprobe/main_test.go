@@ -6,6 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jonathanngiroux-star/oneprobe/internal/scrape"
+	"github.com/jonathanngiroux-star/oneprobe/internal/store"
 )
 
 func TestVersionPrintsBinaryNameAndVersionExitsZero(t *testing.T) {
@@ -58,6 +62,113 @@ func TestTUICommandOpensStoreAndRefusesBadDB(t *testing.T) {
 	}
 	if !strings.Contains(errb2.String(), "/nonexistent-dir2/x.db") {
 		t.Errorf("refusal must name the env db path, got: %q", errb2.String())
+	}
+}
+
+// TestQueryCommandEvaluatesExpr: `oneprobe query <expr>` evaluates
+// through the same engine as the GUI/TUI and prints the result.
+func TestQueryCommandEvaluatesExpr(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "q.db")
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	tg, err := st.AddTarget(store.Target{
+		Name: "seed", URL: "http://127.0.0.1:9999/metrics",
+		Interval: scrape.Millis(time.Minute), Enabled: false,
+	})
+	if err != nil {
+		t.Fatalf("AddTarget: %v", err)
+	}
+	now := time.Now().UTC().UnixMilli()
+	if err := st.InsertSamples([]store.Sample{
+		{TargetID: tg.ID, Name: "cli_total", Labels: `{h="a"}`, Ts: now, Value: 3},
+		{TargetID: tg.ID, Name: "cli_total", Labels: `{h="b"}`, Ts: now, Value: 4},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	st.Close()
+
+	var out, errb bytes.Buffer
+	code := run([]string{"query", "--db", db, "sum(cli_total)"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "7") {
+		t.Errorf("query output missing sum=7, got: %q", out.String())
+	}
+}
+
+// TestQueryCommandRefusesUndocumentedFunction: bad expr exits nonzero
+// naming the function.
+func TestQueryCommandRefusesUndocumentedFunction(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "q.db")
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	st.Close()
+
+	var out, errb bytes.Buffer
+	code := run([]string{"query", "--db", db, "histogram_quantile(0.9, x)"}, &out, &errb)
+	if code == 0 {
+		t.Fatalf("bad expr must exit nonzero")
+	}
+	if !strings.Contains(errb.String(), `unsupported function "histogram_quantile"`) {
+		t.Errorf("refusal must name the function, got: %q", errb.String())
+	}
+}
+
+// TestAlertCommandListsRulesAndState: `oneprobe alert` lists rules with
+// live state from the same store.
+func TestAlertCommandListsRulesAndState(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "a.db")
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	if _, err := st.AddAlertRule(store.AlertRule{
+		Name: "cli-alert", Expr: "up", Op: "<", Value: 1, Enabled: true,
+	}); err != nil {
+		t.Fatalf("AddAlertRule: %v", err)
+	}
+	if err := st.SetAlertState(1, "firing", 0, time.Unix(1759305600, 0).UTC()); err != nil {
+		t.Fatalf("SetAlertState: %v", err)
+	}
+	st.Close()
+
+	var out, errb bytes.Buffer
+	code := run([]string{"alert", "--db", db}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr: %q", code, errb.String())
+	}
+	for _, want := range []string{"cli-alert", "up < 1", "firing"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("alert output missing %q, got: %q", want, out.String())
+		}
+	}
+}
+
+// TestAlertCommandEmptyPrintsHonestMessage.
+func TestAlertCommandEmptyPrintsHonestMessage(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "a.db")
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	st.Close()
+
+	var out, errb bytes.Buffer
+	code := run([]string{"alert", "--db", db}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "no alert rules") {
+		t.Errorf("empty store must say so honestly, got: %q", out.String())
 	}
 }
 

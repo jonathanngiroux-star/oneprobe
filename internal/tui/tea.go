@@ -60,7 +60,7 @@ func (t teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // named keys keep their tea name; printable runes go as themselves.
 func normalizeKey(msg tea.KeyMsg) string {
 	switch msg.String() {
-	case "tab", "shift+tab", "enter", "backspace", "ctrl+c", "q":
+	case "tab", "shift+tab", "enter", "backspace", "esc", "ctrl+c", "q", "?":
 		return msg.String()
 	}
 	s := msg.String()

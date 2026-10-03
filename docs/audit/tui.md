@@ -23,6 +23,20 @@ PTY audit: 8/8 green.
 | Donate addresses byte-for-byte | PASS | ETH + BTC exact |
 | q quits cleanly | PASS | exit observed |
 
+## Working-guide wizard (step 6 addition)
+
+The guided tour is a working guide, not prose: every workflow step
+carries a live action that runs against the real store.
+
+- `n` lists real targets / latest scrape outcomes
+- `t` runs `sum(up)` through the real query engine
+- `a` creates the `up < 1` alert rule for real
+- `m` dry-runs the committed Datadog sample fixture
+
+Verified live in a PTY: all four actions produce real results
+(17/17 checks). The GUI tour carries the same working steps as forms
+with action buttons wired to the live API (23/23 Playwright checks).
+
 ## Bugs found and fixed (not ticketed)
 
 1. **Multi-rune input silently dropped (product bug, real).** Bubble
