@@ -1,0 +1,18 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "oneprobe-desktop",
+  "outputfilename": "oneprobe-desktop",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Jonathann Giroux"
+  },
+  "info": {
+    "productName": "Oneprobe",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright © 2026 Jonathann Giroux",
+    "comments": "Single-binary infrastructure monitor — desktop GUI shell over the same tested core as oneprobe serve. Donation-only; no paid tier."
+  }
+}

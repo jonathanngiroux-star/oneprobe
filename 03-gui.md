@@ -42,6 +42,7 @@ Go, SQLite (in-process series store only), Prometheus scrape, documented PromQL 
 Binary: `oneprobe` commands include `serve`, `migrate`, `query`, `alert`, `version`, `donate`.
 Cold start: about 2 minutes, hard cap 15 minutes. Kubernetes is a bug.
 License: MIT on core (scrape, store, query subset, alerts, migrate, GUI, TUI). No BSL cloud SKU.
+GUI toolkit (step 3 only): [Wails](https://github.com/wailsapp/wails) v2. Desktop window. Go bindings. Not a browser-only admin site.
 GOVERNANCE.md: DCO-only; donation addresses listed; no CLA surprise; 4/4 consensus + 30-day notice for license or wallet changes.
 
 ## Always out of scope
@@ -74,9 +75,18 @@ oneprobe/
 
 ## This step
 
-Build a full GUI on the finished backend. Do not redesign the backend except for a thin HTTP handler the GUI needs. Do not start the TUI.
+Build a full GUI on the finished backend with **Wails** ([github.com/wailsapp/wails](https://github.com/wailsapp/wails)). Do not start the TUI.
 
-Full local web GUI served by the same binary (no separate frontend server):
+Wails rules:
+- Wails v2. `wails init`, `wails dev`, `wails build`.
+- Go backend methods bound into the frontend. Do not build a browser-only admin site instead of Wails.
+- Frontend lives in `frontend/` (vanilla, Svelte, or Vue — pick one and stick). No paid component kit.
+- Desktop window on Linux is the required target. macOS/Windows if the toolchain is present, not instead of Linux.
+- Call existing store/eval/migrate functions. Do not fork a second data model for the window.
+- No subscription UI, no pricing table, no Stripe. Donate screen is a Wails view with both addresses and copy buttons.
+- `wails build` must produce a local binary. Document `wails dev` in the README.
+
+Wails desktop GUI (github.com/wailsapp/wails), bound to the Go backend:
 - Target list, add/remove target, last scrape error
 - Time-series graph for the documented query subset
 - Alert rule editor (threshold on a saved query) and alert history
@@ -85,19 +95,19 @@ Full local web GUI served by the same binary (no separate frontend server):
 - Retention and backup note (copy the SQLite file)
 Ugly is fine. Accessible labels, keyboard path for every primary action, no external CDN required to function.
 
-Serve the GUI from the same binary. No separate Node server required at runtime. No external CDN required for the app to function. No subscription UI, no pricing table, no Stripe.
-
 ## Definition of done
 
-- [ ] Every backend wedge action is reachable in the GUI
-- [ ] Donate page shows both addresses exactly
-- [ ] README says how to open the GUI
+- [ ] `wails dev` opens a window that reaches every wedge action listed above
+- [ ] `wails build` produces a binary
+- [ ] Donate view shows both addresses exactly
+- [ ] README says how to install the Wails CLI and open the GUI
 - [ ] No TUI yet
 - [ ] No new billing
+- [ ] No browser-only substitute GUI
 
 ## First response required
 
-1. Add the GUI package and routes.
-2. Implement the screens listed above against existing APIs.
-3. Add a smoke script or note in README.
+1. Add the Wails app (`wails.json`, `frontend/`, bound Go methods) beside the existing CLI.
+2. Implement the screens listed above by binding existing backend functions.
+3. Note `wails dev` in the README.
 4. Stop before the TUI and before visual polish that does not change a workflow.

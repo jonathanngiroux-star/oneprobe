@@ -3,3 +3,10 @@
 *.db-wal
 *.db-shm
 /dist/
+/node_modules/
+test/gui/node_modules/
+cmd/oneprobe-desktop/build/
+package.json
+package-lock.json
+test/gui/package.json
+test/gui/package-lock.json

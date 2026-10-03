@@ -42,6 +42,7 @@ Go, SQLite (in-process series store only), Prometheus scrape, documented PromQL 
 Binary: `oneprobe` commands include `serve`, `migrate`, `query`, `alert`, `version`, `donate`.
 Cold start: about 2 minutes, hard cap 15 minutes. Kubernetes is a bug.
 License: MIT on core (scrape, store, query subset, alerts, migrate, GUI, TUI). No BSL cloud SKU.
+GUI toolkit (step 3 only): [Wails](https://github.com/wailsapp/wails) v2. Desktop window. Go bindings. Not a browser-only admin site.
 GOVERNANCE.md: DCO-only; donation addresses listed; no CLA surprise; 4/4 consensus + 30-day notice for license or wallet changes.
 
 ## Always out of scope

@@ -42,6 +42,7 @@ Go, SQLite (in-process series store only), Prometheus scrape, documented PromQL 
 Binary: `oneprobe` commands include `serve`, `migrate`, `query`, `alert`, `version`, `donate`.
 Cold start: about 2 minutes, hard cap 15 minutes. Kubernetes is a bug.
 License: MIT on core (scrape, store, query subset, alerts, migrate, GUI, TUI). No BSL cloud SKU.
+GUI toolkit (step 3 only): [Wails](https://github.com/wailsapp/wails) v2. Desktop window. Go bindings. Not a browser-only admin site.
 GOVERNANCE.md: DCO-only; donation addresses listed; no CLA surprise; 4/4 consensus + 30-day notice for license or wallet changes.
 
 ## Always out of scope
@@ -85,8 +86,9 @@ System checks:
 - No subscription, pricing, or Stripe strings anywhere in the tree
 
 Also run:
-- Backend suite, GUI suite, TUI suite, then one end-to-end script
-- `docker run` from a clean tree
+- Backend suite, Wails `wails build`, TUI suite, then one end-to-end script
+- `docker run` from a clean tree for the CLI
+- Confirm the GUI is still a Wails app (`wails.json` present, frontend bound to Go). A browser-only admin is a failed step 3.
 - Search the repo for Stripe, subscription, "contact sales", Cloud Pro — delete or rewrite to donate
 - Confirm GOVERNANCE.md lists both addresses
 
@@ -94,8 +96,9 @@ Write `docs/audit/system.md` with bugs found and fixed. This is the release gate
 
 ## Definition of done
 
-- [ ] All three surfaces agree on fixtures
-- [ ] Donate addresses identical in CLI, GUI, TUI, README, GOVERNANCE.md
+- [ ] All three surfaces agree on fixtures (CLI, Wails window, TUI)
+- [ ] `wails build` still succeeds and `wails.json` is present
+- [ ] Donate addresses identical in CLI, Wails GUI, TUI, README, GOVERNANCE.md
 - [ ] Cold start still within the cap
 - [ ] `docs/audit/system.md` written
 - [ ] No new product surface

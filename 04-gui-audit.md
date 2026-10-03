@@ -42,6 +42,7 @@ Go, SQLite (in-process series store only), Prometheus scrape, documented PromQL 
 Binary: `oneprobe` commands include `serve`, `migrate`, `query`, `alert`, `version`, `donate`.
 Cold start: about 2 minutes, hard cap 15 minutes. Kubernetes is a bug.
 License: MIT on core (scrape, store, query subset, alerts, migrate, GUI, TUI). No BSL cloud SKU.
+GUI toolkit (step 3 only): [Wails](https://github.com/wailsapp/wails) v2. Desktop window. Go bindings. Not a browser-only admin site.
 GOVERNANCE.md: DCO-only; donation addresses listed; no CLA surprise; 4/4 consensus + 30-day notice for license or wallet changes.
 
 ## Always out of scope
@@ -74,10 +75,12 @@ oneprobe/
 
 ## This step
 
-Full audit and tests of the GUI. Fix bugs. Do not add features. Do not start the TUI.
+Full audit and tests of the Wails GUI. Fix bugs. Do not add features. Do not start the TUI.
+
+The GUI is a Wails v2 desktop app ([github.com/wailsapp/wails](https://github.com/wailsapp/wails)). Do not replace it with a browser-only admin site.
 
 GUI checks:
-- Playwright or equivalent against the binary
+- Frontend tests or a scripted Wails smoke against the bound methods
 - Add target, scrape fixture, see a point on the graph
 - Create alert, force fire, see history row
 - Migrate fixture renders unmapped list
@@ -86,24 +89,27 @@ GUI checks:
 - Works with JS disabled for donate + health; graphs may need JS
 
 Also:
+- `wails build` still succeeds
+- Bound Go methods return errors the frontend actually shows
 - Keyboard path for primary actions
 - Empty, error, and loading states
-- No secrets in the DOM
+- No secrets in the window
 - Donate addresses byte-for-byte
 - `docs/audit/gui.md` listing bugs found and fixed
 
 ## Definition of done
 
-- [ ] GUI test suite green
+- [ ] Wails GUI test suite green (`wails build` plus frontend tests or a scripted smoke)
 - [ ] Bugs fixed, not ticketed
 - [ ] `docs/audit/gui.md` written
 - [ ] No TUI
 - [ ] No new product surface
+- [ ] Still Wails, not a side HTTP admin
 
 ## First response required
 
-1. Walk every screen and write the failing cases first.
-2. Automate them.
+1. Walk every Wails view and write the failing cases first.
+2. Automate them (frontend tests and/or a `wails build` smoke).
 3. Fix failures.
 4. Write the audit note.
 5. Stop.
