@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -232,6 +234,140 @@ func TestQuitKeys(t *testing.T) {
 	}
 	if m3.input != "q" {
 		t.Errorf("input = %q, want q", m3.input)
+	}
+}
+
+// TestBackspaceEditsInput: backspace trims the last rune of the input.
+func TestBackspaceEditsInput(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.screen = ScreenQuery
+	m = typeString(m, "sum(up")
+	m = m.update(keyMsg("backspace"))
+	m = m.update(keyMsg("backspace"))
+	// Input is now "sum(" — typed text after backspace appends to it.
+	m = typeString(m, "up)")
+	if m.input != "sum(up)" {
+		t.Fatalf("input = %q, want sum(up)", m.input)
+	}
+	m = m.update(keyMsg("enter"))
+	if !containsString(m.View(), "sum(up)") {
+		t.Errorf("backspace editing broken; view:\n%s", m.View())
+	}
+}
+
+// TestEnterOnEmptyInputIsNoop: enter with nothing typed must not error,
+// panic, or leave a stale prompt.
+func TestEnterOnEmptyInputIsNoop(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.screen = ScreenQuery
+	m = m.update(keyMsg("enter"))
+	if m.queryOut != "" {
+		t.Errorf("empty enter produced output %q", m.queryOut)
+	}
+	m.screen = ScreenMigrate
+	m = m.update(keyMsg("enter"))
+	if m.migrateOut != "" {
+		t.Errorf("empty enter produced migrate output %q", m.migrateOut)
+	}
+}
+
+// TestRefreshTickDoesNotClearInput: a data-refresh tick landing between
+// keystrokes must not wipe what the user has typed (the tick fires every
+// 2s in production — typing is slower than that).
+func TestRefreshTickDoesNotClearInput(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.screen = ScreenQuery
+	m = typeString(m, "sum(")
+	m = m.update(refreshMsg{}) // the tick lands mid-typing
+	m = typeString(m, "up)")
+	if m.input != "sum(up)" {
+		t.Fatalf("input = %q, want sum(up) (tick cleared it)", m.input)
+	}
+	m = m.update(keyMsg("enter"))
+	if !containsString(m.View(), "sum(up)") {
+		t.Errorf("evaluation lost after tick; view:\n%s", m.View())
+	}
+}
+
+// TestScreenSwitchClearsInput: tabbing away from a half-typed input
+// abandons it — the next input screen starts empty.
+func TestScreenSwitchClearsInput(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.screen = ScreenQuery
+	m = typeString(m, "sum(up")
+	m = m.update(keyMsg("tab"))
+	if m.input != "" {
+		t.Errorf("input survived screen switch: %q", m.input)
+	}
+}
+
+// TestMigrateGarbageJSONNamesPath: a file that exists but is not a
+// dashboard export must be refused naming the PATH, not a generic word.
+func TestMigrateGarbageJSONNamesPath(t *testing.T) {
+	dir := t.TempDir()
+	p := dir + "/garbage.json"
+	if err := os.WriteFile(p, []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	m, _ := newTestModel(t)
+	m.screen = ScreenMigrate
+	m = typeString(m, p)
+	m = m.update(keyMsg("enter"))
+	view := m.View()
+	if !containsString(view, p) {
+		t.Errorf("garbage-JSON refusal must name the path %q\nview:\n%s", p, view)
+	}
+	if !containsString(view, "not a valid Datadog dashboard export") {
+		t.Errorf("refusal must say what's wrong\nview:\n%s", view)
+	}
+}
+
+// TestUnicodeAndLongContentRender: target names with wide runes and a
+// very long URL must render without panicking (View is format-only).
+func TestUnicodeAndLongContentRender(t *testing.T) {
+	m, s := newTestModel(t)
+	long := "http://127.0.0.1:9100/" + strings.Repeat("verylongpathsegment/", 20) + "metrics"
+	if _, err := s.AddTarget(store.Target{
+		Name: "日本語ノード", URL: long,
+		Interval: scrape.Millis(30 * time.Second), Enabled: true,
+	}); err != nil {
+		t.Fatalf("AddTarget: %v", err)
+	}
+	m = m.update(refreshMsg{})
+	view := m.View() // must not panic
+	if !containsString(view, "日本語ノード") {
+		t.Errorf("unicode name not rendered\nview:\n%s", view)
+	}
+}
+
+// TestQueryResultPersistsAcrossScreens: tabbing away and back keeps the
+// last evaluation on screen.
+func TestQueryResultPersistsAcrossScreens(t *testing.T) {
+	m, s := newTestModel(t)
+	tg, err := s.AddTarget(store.Target{
+		Name: "seed", URL: "http://127.0.0.1:9999/metrics",
+		Interval: scrape.Millis(time.Minute), Enabled: false,
+	})
+	if err != nil {
+		t.Fatalf("AddTarget: %v", err)
+	}
+	now := time.Now().UTC().UnixMilli()
+	if err := s.InsertSamples([]store.Sample{
+		{TargetID: tg.ID, Name: "persist_total", Ts: now, Value: 5},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	m = m.update(refreshMsg{})
+	m.screen = ScreenQuery
+	m = typeString(m, "persist_total")
+	m = m.update(keyMsg("enter"))
+	if !containsString(m.View(), "5") {
+		t.Fatalf("setup: no result\n%s", m.View())
+	}
+	m = m.update(keyMsg("tab"))
+	m = m.update(keyMsg("shift+tab"))
+	if !containsString(m.View(), "5") {
+		t.Errorf("result lost across screen switches\n%s", m.View())
 	}
 }
 

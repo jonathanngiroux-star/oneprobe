@@ -213,9 +213,11 @@ func (m Model) update(msg interface{}) Model {
 			}
 			return m
 		default:
-			// A single rune typed into the input of query/migrate.
+			// Printable input into the query/migrate prompt. A keyMsg may
+			// carry multiple runes (terminal coalescing, paste) — append
+			// the whole string.
 			if m.screen == ScreenQuery || m.screen == ScreenMigrate {
-				if len(msg) == 1 {
+				if len(msg) > 0 {
 					m.input += string(msg)
 				}
 			}
@@ -269,7 +271,7 @@ func (m *Model) runMigrate() {
 		m.migrateOut = "error: " + err.Error()
 		return
 	}
-	dash, err := decodeDashboard(raw)
+	dash, err := decodeDashboard(raw, path)
 	if err != nil {
 		m.migrateOut = "error: " + err.Error()
 		return
@@ -404,10 +406,12 @@ func readDashboardFile(path string) ([]byte, error) {
 }
 
 // decodeDashboard parses the export into the migrate package's shape.
-func decodeDashboard(raw []byte) (datadog.Dashboard, error) {
+// The refusal names the PATH — a generic "input" tells the operator
+// nothing about which file was bad.
+func decodeDashboard(raw []byte, path string) (datadog.Dashboard, error) {
 	var d datadog.Dashboard
 	if err := json.Unmarshal(raw, &d); err != nil {
-		return d, fmt.Errorf("%s is not a valid Datadog dashboard export: %w", "input", err)
+		return d, fmt.Errorf("%s is not a valid Datadog dashboard export: %w", path, err)
 	}
 	return d, nil
 }

@@ -63,13 +63,13 @@ func normalizeKey(msg tea.KeyMsg) string {
 	case "tab", "shift+tab", "enter", "backspace", "ctrl+c", "q":
 		return msg.String()
 	}
-	// Printable runes type into the input.
-	if s := msg.String(); len(s) == 1 {
+	s := msg.String()
+	// A KeyRunes message can carry MULTIPLE runes when input arrives
+	// fast (terminal coalescing, paste). Feed them all through as one
+	// string — the Model appends it to the input whole.
+	if len(s) > 0 && msg.Type == tea.KeyRunes {
 		return s
 	}
-	// Multi-rune printable (e.g. pasted text): feed rune by rune via a
-	// sentinel the Model ignores; bubbletea sends one key at a time in
-	// practice, so this is defensive.
 	return ""
 }
 
