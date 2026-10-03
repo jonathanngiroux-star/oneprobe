@@ -17,6 +17,8 @@ import (
 	"github.com/jonathanngiroux-star/oneprobe/internal/donate"
 	"github.com/jonathanngiroux-star/oneprobe/internal/migrate/datadog"
 	"github.com/jonathanngiroux-star/oneprobe/internal/serve"
+	"github.com/jonathanngiroux-star/oneprobe/internal/store"
+	"github.com/jonathanngiroux-star/oneprobe/internal/tui"
 )
 
 // version is stamped at build time (-ldflags -X main.version=X.Y.Z).
@@ -27,7 +29,8 @@ const usage = `oneprobe — single-binary infrastructure monitor
 Usage: oneprobe <command> [flags]
 
 Commands:
-  serve    Start the HTTP server (scrape, UI, /healthz, /donate)
+  serve    Start the HTTP server (scrape, GUI, /healthz, /donate)
+  tui      Terminal UI over the same store (tab/shift+tab screens, q quit)
   migrate  Dry-run a migration plan from an incumbent (e.g. Datadog)
   query    Query stored samples (planned — see docs/query.md)
   version  Print the binary name and version
@@ -52,6 +55,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runMigrate(args[1:], stdout, stderr)
 	case "serve":
 		return runServe(args[1:], stdout, stderr)
+	case "tui":
+		return runTUI(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", args[0])
 		fmt.Fprint(stderr, usage)
@@ -221,6 +226,40 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	httpSrv := &http.Server{Handler: srv.Handler()}
 	if err := httpSrv.Serve(ln); err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// runTUI launches the terminal UI against the shared store. Same db
+// as serve: --db / $ONEPROBE_DB / oneprobe.db.
+func runTUI(args []string, stdout, stderr io.Writer) int {
+	dbPath := os.Getenv("ONEPROBE_DB")
+	if dbPath == "" {
+		dbPath = "oneprobe.db"
+	}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case strings.HasPrefix(a, "--db="):
+			dbPath = strings.TrimPrefix(a, "--db=")
+		case a == "--db" && i+1 < len(args):
+			i++
+			dbPath = args[i]
+		default:
+			fmt.Fprintf(stderr, "tui: unknown flag %q\n", a)
+			return 2
+		}
+	}
+	// Fail BEFORE taking over the terminal when the db cannot open.
+	st, err := store.Open(dbPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "tui: cannot open %s: %v\n", dbPath, err)
+		return 1
+	}
+	defer st.Close()
+	if err := tui.Run(st); err != nil {
+		fmt.Fprintf(stderr, "tui: %v\n", err)
 		return 1
 	}
 	return 0

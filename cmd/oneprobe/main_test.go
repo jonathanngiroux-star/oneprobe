@@ -36,6 +36,31 @@ func TestDonatePrintsBothAddressesExactlyAndExitsZero(t *testing.T) {
 	}
 }
 
+func TestTUICommandOpensStoreAndRefusesBadDB(t *testing.T) {
+	// --db pointing at an unopenable path must exit nonzero naming it.
+	var out, errb bytes.Buffer
+	code := run([]string{"tui", "--db", "/nonexistent-dir/oneprobe.db"}, &out, &errb)
+	if code == 0 {
+		t.Fatalf("tui with a bad --db must not succeed (stderr: %q)", errb.String())
+	}
+	if !strings.Contains(errb.String(), "/nonexistent-dir/oneprobe.db") {
+		t.Errorf("refusal must name the db path, got: %q", errb.String())
+	}
+	// No --db: falls back to ONEPROBE_DB.
+	t.Setenv("ONEPROBE_DB", filepath.Join(t.TempDir(), "env.db"))
+	var out2, errb2 bytes.Buffer
+	// tui would block on a terminal; we only test arg resolution here by
+	// giving it a bad value shape: nonexistent dir again but via env.
+	t.Setenv("ONEPROBE_DB", "/nonexistent-dir2/x.db")
+	code = run([]string{"tui"}, &out2, &errb2)
+	if code == 0 {
+		t.Error("tui with bad ONEPROBE_DB must fail")
+	}
+	if !strings.Contains(errb2.String(), "/nonexistent-dir2/x.db") {
+		t.Errorf("refusal must name the env db path, got: %q", errb2.String())
+	}
+}
+
 func TestUnknownCommandExitsTwoAndNamesIt(t *testing.T) {
 	var out, errb bytes.Buffer
 	code := run([]string{"frobnicate"}, &out, &errb)

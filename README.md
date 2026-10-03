@@ -61,6 +61,24 @@ targets, recent scrapes with errors, the query graph, alert rules with
 history, the Datadog dry-run screen, and the retention note are all
 there. The donate page is at `http://127.0.0.1:8080/donate`.
 
+**Launch the TUI:** `./oneprobe tui --db /tmp/oneprobe.db` (same db as
+the GUI; defaults to `$ONEPROBE_DB` or `oneprobe.db`). Six screens —
+targets, scrapes, query, alerts, migrate, donate — driven entirely by
+keyboard:
+
+```
+tab / shift+tab   next / previous screen
+enter             submit (query expression, migrate file path)
+q                 quit (on screens without a text input)
+ctrl+c             quit anywhere
+```
+
+The query screen evaluates the same documented subset as the GUI
+(`sum by (code) (rate(http_requests_total[5m]))` works;
+`histogram_quantile` is refused by name). The migrate screen takes a
+Datadog dashboard-export file path and prints the same
+mapped/partial/unmapped/risks summary as the CLI and GUI.
+
 Or with Docker (image built from this repo):
 
 ```
@@ -95,7 +113,8 @@ fixture maps to.
 
 | Command | What it does |
 |---|---|
-| `oneprobe serve` | HTTP server: `/healthz`, `/donate`, API, embedded UI |
+| `oneprobe serve` | HTTP server with `/healthz`, `/donate`, the API, and the embedded GUI (targets with last-error column, scrapes, alert rules with history, the query graph, the Datadog dry-run screen with paste/file input, the retention note) |
+| `oneprobe tui` | Terminal UI over the same store: targets, scrapes, query, alerts, migrate, donate — keyboard complete |
 | `oneprobe migrate --from=datadog --dry-run` | Print a migration diff report for a Datadog dashboard export |
 | `oneprobe version` | Print binary name and version |
 | `oneprobe donate` | Print the donation addresses |
