@@ -158,10 +158,10 @@ def suite(gui):
 
     # ---- copy buttons -------------------------------------------------
     # footer
-    gui.click("footer button.copy")  # first = ETH/USDC
+    gui.click("#section-donate button.copy")  # first = ETH/USDC
     time.sleep(0.5)
-    btn = gui.read("footer button.copy")
-    ok("footer ETH copy button flashes Copied",
+    btn = gui.read("#section-donate button.copy")
+    ok("donate section ETH copy button flashes Copied",
        (btn.get("value") or {}).get("text", "") == "Copied",
        (btn.get("value") or {}).get("text", ""))
     clip = gui.clipboard()
@@ -172,13 +172,19 @@ def suite(gui):
         checks.append(True)
 
     # second footer button = BTC
-    btns = gui.count("footer button.copy")
-    ok("footer has exactly 2 copy buttons", btns.get("value") == 2, str(btns.get("value")))
+    btns = gui.count("#section-donate button.copy")
+    ok("donate section has exactly 2 copy buttons", btns.get("value") == 2, str(btns.get("value")))
 
-    # ---- donate page surfaces (in-page footer) ------------------------
+    # ---- donate section (its own menu place, not the first page) --------
+    # switch to the donate section via the menu and read it
+    gui.click("#menu button[data-section=donate]")
+    donate = gui.read("#section-donate")
+    ok("donate section carries ETH address", ETH in (donate.get("value") or {}).get("text", ""))
+    ok("donate section carries BTC address", BTC in (donate.get("value") or {}).get("text", ""))
     footer = gui.read("footer")
-    ok("footer carries ETH address", ETH in (footer.get("value") or {}).get("text", ""))
-    ok("footer carries BTC address", BTC in (footer.get("value") or {}).get("text", ""))
+    ok("footer carries no raw addresses",
+       ETH not in (footer.get("value") or {}).get("text", "") and
+       BTC not in (footer.get("value") or {}).get("text", ""))
 
     # ---- server-side cross-verification --------------------------------
     try:
