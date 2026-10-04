@@ -10,3 +10,8 @@ package.json
 package-lock.json
 test/gui/package.json
 test/gui/package-lock.json
+
+# build artifacts
+oneprobe
+oneprobe-desktop
+cmd/oneprobe-desktop/build/
