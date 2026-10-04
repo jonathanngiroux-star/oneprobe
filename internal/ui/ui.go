@@ -123,6 +123,7 @@ func Page() string {
   <button type="button" data-section="alerts">Alerts</button>
   <button type="button" data-section="migrate">Migrate</button>
   <button type="button" data-section="backup">Backup</button>
+  <button type="button" data-section="donate">Donate</button>
   <div class="spacer"></div>
   <button type="button" id="wizard-open" title="setup wizard" aria-label="Run setup wizard">Run setup wizard</button>
 </nav>
@@ -227,8 +228,10 @@ SQLite file (the path printed at startup, e.g. <code>oneprobe.db</code>) while t
 that single file is the whole database. There is no hosted retention product and never will be.</p>
 </div>
 
-<footer>
-  <div>Oneprobe is free to self-host. If it replaces a Datadog dashboard week, <a href="/donate">donate</a>.</div>
+<div class="section" id="section-donate">
+<h2 id="donate-heading">Donate</h2>
+<p class="note">Oneprobe is free to self-host. If it replaces a Datadog dashboard week,
+donate — optional, and no feature is ever gated on it.</p>
 `)
 
 	for _, a := range donate.Addresses() {
@@ -237,6 +240,12 @@ that single file is the whole database. There is no hosted retention product and
 			"<code id=\"" + id + "\">" + a.Address + "</code>" +
 			"<button type=\"button\" class=\"copy\" data-target=\"" + id + "\" aria-label=\"Copy " + a.Chain + " address\">Copy</button></div>\n")
 	}
+	b.WriteString(`</div>
+
+<footer>
+  <div>Oneprobe is free to self-host. If it replaces a Datadog dashboard week, <a href="/donate">donate</a>.</div>
+`)
+
 	b.WriteString(`</footer>
 </div>
 </div>

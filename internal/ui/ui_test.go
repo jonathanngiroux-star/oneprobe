@@ -106,7 +106,9 @@ func TestPageHasSectionMenu(t *testing.T) {
 		`data-section="alerts"`,
 		`data-section="migrate"`,
 		`data-section="backup"`,
+		`data-section="donate"`,
 		`id="section-targets"`,
+		`id="section-donate"`,
 		`switchSection(`,
 	} {
 		if !strings.Contains(page, want) {
@@ -167,13 +169,40 @@ func TestWizardHasStepMenu(t *testing.T) {
 
 func TestPageShowsDonateAddresses(t *testing.T) {
 	page := Page()
+	// The donate section carries both addresses, each with its copy button.
+	secStart := strings.Index(page, `id="section-donate"`)
+	if secStart == -1 {
+		t.Fatal("page has no donate section")
+	}
+	section := page[secStart:]
+	sectionEnd := strings.Index(section, `</div>
+<footer>`)
+	if sectionEnd != -1 {
+		section = section[:sectionEnd]
+	}
 	for _, a := range donate.Addresses() {
-		if !strings.Contains(page, a.Address) {
-			t.Errorf("UI footer missing address %s", a.Address)
+		if !strings.Contains(section, a.Address) {
+			t.Errorf("donate section missing address %s", a.Address)
+		}
+		id := "footer-" + addrSlug(a.Chain)
+		if !strings.Contains(section, "id=\""+id+"\"") {
+			t.Errorf("donate section missing element id %q", id)
 		}
 	}
-	if !strings.Contains(page, "donate") {
-		t.Error("UI must link the donate surface")
+	// The first page (targets) must not show the raw addresses: the
+	// footer keeps only a link to the donate section.
+	fi := strings.LastIndex(page, "<footer>")
+	if fi == -1 {
+		t.Fatal("no footer")
+	}
+	footer := page[fi : strings.Index(page[fi:], "</footer>")+fi]
+	for _, a := range donate.Addresses() {
+		if strings.Contains(footer, a.Address) {
+			t.Errorf("footer must not carry raw address %s - donate has its own section", a.Address)
+		}
+	}
+	if !strings.Contains(footer, "donate") {
+		t.Error("footer must still link the donate surface")
 	}
 }
 
