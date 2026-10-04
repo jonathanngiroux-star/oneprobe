@@ -5,3 +5,7 @@
 export function Shutdown(arg1) {
   return window['go']['main']['App']['Shutdown'](arg1);
 }
+
+export function TestResult(arg1) {
+  return window['go']['main']['App']['TestResult'](arg1);
+}

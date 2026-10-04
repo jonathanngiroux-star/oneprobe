@@ -88,6 +88,37 @@ func TestTargetValidationRejectsBadInput(t *testing.T) {
 	}
 }
 
+// TestAddTargetReportsCreatedVsUpdated: the upsert must tell the
+// caller whether it created a row or updated an existing one —
+// surfaces use this to report honestly (a silent rename reads as
+// data loss to the user).
+func TestAddTargetReportsCreatedVsUpdated(t *testing.T) {
+	s := openTestStore(t)
+	created, err := s.AddTarget(Target{
+		Name: "web-1", URL: "http://127.0.0.1:9100/metrics",
+		Interval: scrape.Millis(15 * time.Second), Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("AddTarget: %v", err)
+	}
+	if !created.CreatedNew {
+		t.Error("first AddTarget for a URL must report CreatedNew=true")
+	}
+	updated, err := s.AddTarget(Target{
+		Name: "web-1-rename", URL: "http://127.0.0.1:9100/metrics",
+		Interval: scrape.Millis(30 * time.Second), Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("AddTarget upsert: %v", err)
+	}
+	if updated.CreatedNew {
+		t.Error("AddTarget for an existing URL must report CreatedNew=false")
+	}
+	if updated.ID != created.ID {
+		t.Errorf("same URL should upsert to same ID: %d != %d", updated.ID, created.ID)
+	}
+}
+
 func TestDeleteTargetRemovesRow(t *testing.T) {
 	s := openTestStore(t)
 	tg, err := s.AddTarget(Target{Name: "gone", URL: "http://127.0.0.1:9999/metrics", Interval: scrape.Millis(time.Minute), Enabled: true})

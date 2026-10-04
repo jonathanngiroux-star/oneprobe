@@ -2,6 +2,7 @@ package serve
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -15,6 +16,42 @@ import (
 
 // TestServeNegativePaths walks every API refusal: each must return the
 // right status AND name the rejected input.
+// TestPostTargetReportsCreateVsUpdate: POSTing a URL that already
+// exists is an UPDATE — the API must say 200 (not 201) and the body
+// must carry created:false so the GUI can report the rename honestly.
+func TestPostTargetReportsCreateVsUpdate(t *testing.T) {
+	srv := httptest.NewServer(newTestServer(t))
+	defer srv.Close()
+
+	post := func(name, url string) (int, map[string]any) {
+		resp, err := http.Post(srv.URL+"/api/targets", "application/json",
+			strings.NewReader(fmt.Sprintf(`{"name":%q,"url":%q,"interval":1000}`, name, url)))
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		defer resp.Body.Close()
+		var body map[string]any
+		json.NewDecoder(resp.Body).Decode(&body)
+		return resp.StatusCode, body
+	}
+
+	code, body := post("web-1", "http://127.0.0.1:9100/metrics")
+	if code != http.StatusCreated {
+		t.Errorf("first POST -> %d, want 201", code)
+	}
+	if body["created"] != true {
+		t.Errorf("first POST body created=%v, want true", body["created"])
+	}
+
+	code, body = post("web-1-rename", "http://127.0.0.1:9100/metrics")
+	if code != http.StatusOK {
+		t.Errorf("upsert POST -> %d, want 200", code)
+	}
+	if body["created"] != false {
+		t.Errorf("upsert POST body created=%v, want false", body["created"])
+	}
+}
+
 func TestServeNegativePaths(t *testing.T) {
 	srv := httptest.NewServer(newTestServer(t))
 	defer srv.Close()

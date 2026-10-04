@@ -3,3 +3,5 @@
 import {context} from '../models';
 
 export function Shutdown(arg1:context.Context):Promise<void>;
+
+export function TestResult(arg1:string):Promise<void>;

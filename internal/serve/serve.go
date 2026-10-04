@@ -117,6 +117,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/alerts/", s.handleAlertSubresources)
 	mux.HandleFunc("/api/migrate/datadog", s.handleMigrateDatadog)
+	if ui.BridgeArmed() {
+		mux.HandleFunc("/testbridge.js", s.handleTestBridgeJS)
+	}
 	mux.HandleFunc("/", s.handleUI)
 
 	return mux
@@ -179,7 +182,12 @@ func (s *Server) handleTargets(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "add target: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, tg)
+		if tg.CreatedNew {
+			writeJSON(w, http.StatusCreated, tg)
+		} else {
+			// Same URL already existed: this was an UPDATE (rename).
+			writeJSON(w, http.StatusOK, tg)
+		}
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -320,6 +328,13 @@ func (s *Server) handleRecentScrapes(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUI serves the embedded single-page UI at /.
+// handleTestBridgeJS serves the in-app test-bridge interpreter.
+// Bridge-only: the route is not even registered in a normal launch.
+func (s *Server) handleTestBridgeJS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	w.Write([]byte(ui.TestBridgeJS()))
+}
+
 func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)

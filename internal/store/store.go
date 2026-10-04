@@ -340,6 +340,12 @@ func (s *Store) AddTarget(t Target) (Target, error) {
 	}
 	var out Target
 	var createdAtUnix int64
+	// Detect insert vs update BEFORE the upsert: the API must tell the
+	// user whether they created a target or renamed an existing one.
+	// Safe against races: the scrape loop is the only other writer and
+	// it never writes targets rows.
+	var existing int64
+	_ = s.db.QueryRow(`SELECT id FROM targets WHERE url = ?`, t.URL).Scan(&existing)
 	err = s.db.QueryRow(
 		`INSERT INTO targets (name, url, interval_ms, enabled, created_at)
 		 VALUES (?, ?, ?, ?, ?)
@@ -355,6 +361,7 @@ func (s *Store) AddTarget(t Target) (Target, error) {
 	}
 	out.Name, out.URL, out.Interval, out.Enabled = t.Name, t.URL, t.Interval, t.Enabled
 	out.CreatedAt = scrape.Time(time.Unix(createdAtUnix, 0).UTC())
+	out.CreatedNew = existing == 0
 	return out, nil
 }
 

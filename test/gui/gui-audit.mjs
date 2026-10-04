@@ -27,6 +27,12 @@ const BTC = "bc1qxe2zx5tv3hdreaej6s2x4p7han85uey828rrhg";
 
 const results = [];
 const failures = [];
+async function gotoSection(name) {
+  await page.click(`#menu button[data-section=${name}]`);
+  await page.waitForFunction(
+    (n) => document.querySelector(".section.active").id === "section-" + n, name);
+}
+
 function record(name, ok, detail = "") {
   results.push({ name, ok, detail });
   if (!ok) failures.push(`${name}${detail ? ": " + detail : ""}`);
@@ -48,7 +54,8 @@ await new Promise(r => exporter.listen(0, "127.0.0.1", r));
 const exporterPort = exporter.address().port;
 
 // --- oneprobe binary ----------------------------------------------------
-fs.rmSync("/tmp/gui-audit.db", { force: true });
+// A stale WAL/SHM from a previous run corrupts a fresh db open.
+for (const suf of ["", "-wal", "-shm"]) fs.rmSync("/tmp/gui-audit.db" + suf, { force: true });
 const proc = spawn("./oneprobe", ["serve", "--db", "/tmp/gui-audit.db", "--http", "127.0.0.1:18090"], {
   cwd: path.join(process.cwd()), stdio: ["ignore", "pipe", "pipe"],
 });
@@ -60,7 +67,7 @@ for (let i = 0; i < 50; i++) {
 }
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext();
+const ctx = await browser.newContext({ colorScheme: "dark" });
 const consoleErrors = [];
 ctx.on("console", msg => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
 const badResponses = [];
@@ -76,13 +83,26 @@ try {
   const emptyTargets = await page.locator("#targets td").first().textContent();
   record("targets empty state", /no targets yet/.test(emptyTargets), JSON.stringify(emptyTargets));
 
-  // Fresh db => the guided tour auto-opens; Esc dismisses it and the
-  // backdrop no longer intercepts clicks.
-  const tourOpen = await page.locator("#tour:not([hidden])").count();
-  record("gui tour auto-opens on fresh db", tourOpen === 1);
+  // Fresh db => the wizard does NOT auto-open; the first-run hint
+  // shows instead. The wizard is explicit-activation only.
+  const wizardHidden = await page.$eval("#wizard", el => el.hidden);
+  record("wizard does not auto-open", wizardHidden === true);
+  const hintShown = await page.$eval("#first-run-hint", el => !el.hidden);
+  record("first-run hint offers the wizard", hintShown === true);
+  await page.click("#wizard-open");
+  const wizardOpen = await page.$eval("#wizard", el => !el.hidden);
+  record("sidebar button opens the wizard", wizardOpen === true);
+  const cardDark = await page.$eval("#wizard-card", el => getComputedStyle(el).backgroundColor);
+  record("wizard card uses the dark palette", cardDark !== "rgb(255, 255, 255)", cardDark);
   await page.keyboard.press("Escape");
-  await page.waitForFunction(() => document.querySelector("#tour").hidden);
-  record("gui tour esc-dismisses", true);
+  await page.waitForFunction(() => document.querySelector("#wizard").hidden);
+  record("esc closes the wizard", true);
+  // section menu: switch and verify
+  await page.click("#menu button[data-section=scrapes]");
+  const activeSec = await page.$eval(".section.active", el => el.id);
+  record("menu switches to scrapes section", activeSec === "section-scrapes", activeSec);
+  await page.click("#menu button[data-section=targets]"); // back for the form checks
+
 
   // Keyboard path: focus the form, fill via keyboard, submit with Enter.
   await page.locator('#add-target input[name="name"]').click();
@@ -107,6 +127,7 @@ try {
   record("scrape visible in scrapes panel", /ok/.test(scrapesText), scrapesText.trim().slice(0, 80));
 
   // === Graph ============================================================
+  await gotoSection("graph");
   await page.locator('#query-form input[name="expr"]').click();
   await page.keyboard.type("up");
   await page.locator('#query-form button[type="submit"]').focus();
@@ -139,6 +160,7 @@ try {
   record("graph error state names the rejected function", true);
 
   // === Alerts: create, force fire, history =============================
+  await gotoSection("alerts");
   await page.locator('#add-alert input[name="name"]').click();
   await page.keyboard.type("gui-up-down");
   await page.locator('#add-alert input[name="expr"]').fill("up");
@@ -178,6 +200,7 @@ try {
       { id: 2, type: "check_status", title: "Synthetics", requests: [{ q: '"synthetics" in ("check_state")' }] },
     ],
   };
+  await gotoSection("migrate");
   await page.locator("#migrate-input").fill(JSON.stringify(dash));
   await page.locator('#migrate-form button[type="submit"]').focus();
   await page.keyboard.press("Enter");

@@ -20,6 +20,12 @@ type Target struct {
 	Interval  Millis `json:"interval"`
 	Enabled   bool   `json:"enabled"`
 	CreatedAt Time   `json:"created_at"`
+	// CreatedNew reports whether AddTarget INSERTed a row (true) or
+	// UPDATED an existing one with the same URL (false). Marshals as
+	// "created" so API clients read it without a mapping layer.
+	// Zero-value targets (from ListTargets etc.) marshal false, which
+	// is fine — the field only matters on the AddTarget response.
+	CreatedNew bool `json:"created"`
 }
 
 // Millis is a time.Duration that (un)marshals as integer milliseconds.

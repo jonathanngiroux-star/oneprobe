@@ -70,7 +70,9 @@ func main() {
 			// /donate are the same code the browser GUI uses.
 			Handler: app.handler,
 		},
-		OnStartup:  func(ctx context.Context) {},
+		OnStartup: func(ctx context.Context) {
+			app.startTestBridge(ctx) // no-op unless ONEPROBE_GUI_TESTBRIDGE=1
+		},
 		OnShutdown: func(ctx context.Context) { app.Shutdown(ctx) },
 		Bind:       []interface{}{app},
 	})
